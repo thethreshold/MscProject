@@ -1,0 +1,106 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+This is an [R Markdown](http://rmarkdown.rstudio.com) Notebook. When you execute code within the notebook, the results appear beneath the code. 
+
+Try executing this chunk by clicking the *Run* button within the chunk or by placing your cursor inside it and pressing *Ctrl+Shift+Enter*. 
+
+```{r}
+# pre-requirements
+# 1) download RTools from -> https://cran.rstudio.com/bin/windows/Rtools/
+
+#set working directory
+setwd("c:/Users/Andrew/Dropbox/Studies/MSC Big Data Analytics/Dissertation/IT Artefact/Iteration_1")
+
+# installing all required packages
+install.packages("sqldf")
+install.packages("installr")
+install.packages("devtools")
+devtools::install_github("ikosmidis/GoldenCheetahOpenData")
+install.packages("aws.s3")
+install.packages("RCurl")
+install.packages("XML")
+install.packages('rvest') #webscraping
+install.packages("aws.s3")
+install.packages("purrr")
+install.packages("stringr")
+install.packages("RSelenium")
+install.packages("tidyjson")
+install_github("blmoore/rjsonpath")
+
+# Calling required packages
+library("sqldf")
+library("devtools")
+library("GoldenCheetahOpenData")
+library("aws.s3")
+library("RCurl")
+library("XML")
+library('rvest')
+library("dplyr")
+library("aws.s3")
+library("purrr")
+library("stringr")
+library("RSelenium")
+library(plyr)
+require('tidyjson')
+library('rjsonpath')
+```
+
+
+
+```{r}
+# download all metadata json files
+setwd("D:/X-files/Athlete Files/Metadata")
+Athlete_metadata <- get_bucket_df(bucket = "goldencheetah-opendata", prefix = "metadata", max = Inf) %>% pull(Key)
+
+Athlete_metadata <- strsplit(Athlete_metadata, "\r\n")
+Athlete_metadata = unlist(Athlete_metadata)
+str(Athlete_metadata)
+length(Athlete_metadata)
+Athlete_metadata[2:6607]
+
+str_subset(Athlete_metadata[2:6607], "\\.zip$") %>%
+  walk(function(key) {
+    filename <- str_extract(key, "\\{.+")
+    save_object(object = key, bucket = "goldencheetah-opendata", file = filename)
+  })
+```
+
+
+
+next step is to extract all zip files
+```{r}
+library(plyr)
+# get all the zip files
+zipF <- list.files(path = "D:/X-files/Athlete Files/Metadata", pattern = "*.zip", full.names = TRUE)
+
+# unzip all your files
+ldply(.data = zipF, .fun = unzip, exdir = "D:/X-files/Athlete Files/Metadata")
+```
+Create table from all json files appended together
+```{r}
+json_filenames <- list.files("D:/X-files/Athlete Files/Metadata", pattern="*.json$", full.names=TRUE) # this should give you a character vector, with each file name represented by an entry
+json_filenames
+# start by creating the list of athletes out of all the JSON files that have been merged together
+library(rjson)
+Athlete_metadata_json <- lapply(json_filenames, function(x) fromJSON(file=x)) # a list in which each element is one of your original JSON files
+
+#convert json file to dataframe
+#(not working due to rides and runs)
+
+x <- length(Athlete_metadata_json)
+y <- length(Athlete_metadata_json[x]$RIDES[])
+
+
+Athlete_metadata_unlist <- unlist(Athlete_metadata_json)
+str(Athlete_metadata_unlist)
+Athlete_metadata_df <- Athlete_metadata_unlist %>% as.data.frame
+```
+
+Add a new chunk by clicking the *Insert Chunk* button on the toolbar or by pressing *Ctrl+Alt+I*.
+
+When you save the notebook, an HTML file containing the code and output will be saved alongside it (click the *Preview* button or press *Ctrl+Shift+K* to preview the HTML file).
+
+The preview shows you a rendered HTML copy of the contents of the editor. Consequently, unlike *Knit*, *Preview* does not run any R code chunks. Instead, the output of the chunk when it was last run in the editor is displayed.
