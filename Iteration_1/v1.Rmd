@@ -104,3 +104,19 @@ Add a new chunk by clicking the *Insert Chunk* button on the toolbar or by press
 When you save the notebook, an HTML file containing the code and output will be saved alongside it (click the *Preview* button or press *Ctrl+Shift+K* to preview the HTML file).
 
 The preview shows you a rendered HTML copy of the contents of the editor. Consequently, unlike *Knit*, *Preview* does not run any R code chunks. Instead, the output of the chunk when it was last run in the editor is displayed.
+
+
+install.packages("tidyjson")
+require('tidyjson')
+
+
+setwd("D:/X-files/Athlete Files/Metadata")
+Poes <- jsonlite::fromJSON("{000c6417-e1e4-497e-89e6-bb21e17ec355}.json", simplifyDataFrame = TRUE)
+str(Poes)
+
+Poes_df <- Poes %>% as.data.frame
+
+
+json <- read_json("{000c6417-e1e4-497e-89e6-bb21e17ec355}.json")
+json_path(json, "$.RIDES.sport")
+idx_BIKE <- which(json_path(json, "$.RIDES.sport") == "Bike")
