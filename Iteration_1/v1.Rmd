@@ -1,122 +1,210 @@
 ---
-title: "R Notebook"
+title: "Msc Dissertation"
 output: html_notebook
 ---
 
-This is an [R Markdown](http://rmarkdown.rstudio.com) Notebook. When you execute code within the notebook, the results appear beneath the code. 
-
-Try executing this chunk by clicking the *Run* button within the chunk or by placing your cursor inside it and pressing *Ctrl+Shift+Enter*. 
-
+Download the data
 ```{r}
-# pre-requirements
-# 1) download RTools from -> https://cran.rstudio.com/bin/windows/Rtools/
-
-#set working directory
-setwd("c:/Users/Andrew/Dropbox/Studies/MSC Big Data Analytics/Dissertation/IT Artefact/Iteration_1")
-
-# installing all required packages
-install.packages("sqldf")
-install.packages("installr")
-install.packages("devtools")
-devtools::install_github("ikosmidis/GoldenCheetahOpenData")
-install.packages("aws.s3")
-install.packages("RCurl")
-install.packages("XML")
-install.packages('rvest') #webscraping
-install.packages("aws.s3")
-install.packages("purrr")
-install.packages("stringr")
-install.packages("RSelenium")
-install.packages("tidyjson")
-install_github("blmoore/rjsonpath")
-
-# Calling required packages
-library("sqldf")
-library("devtools")
-library("GoldenCheetahOpenData")
-library("aws.s3")
-library("RCurl")
-library("XML")
-library('rvest')
+# final edit
+# download all metadata json files into google cloud storage bucket
+library("plyr")
 library("dplyr")
 library("aws.s3")
 library("purrr")
 library("stringr")
-library("RSelenium")
-library(plyr)
-require('tidyjson')
-library('rjsonpath')
-```
 
+setwd("/home/jupyter/goldencheetah_data")
 
-
-```{r}
-# download all metadata json files
-setwd("D:/X-files/Athlete Files/Metadata")
 Athlete_metadata <- get_bucket_df(bucket = "goldencheetah-opendata", prefix = "metadata", max = Inf) %>% pull(Key)
 
 Athlete_metadata <- strsplit(Athlete_metadata, "\r\n")
 Athlete_metadata = unlist(Athlete_metadata)
-str(Athlete_metadata)
-length(Athlete_metadata)
-Athlete_metadata[2:6607]
-
-str_subset(Athlete_metadata[2:6607], "\\.zip$") %>%
+#str(Athlete_metadata)
+#length(Athlete_metadata)
+#Athlete_metadata[2:6607]
+atm <- length(Athlete_metadata)
+str_subset(Athlete_metadata[2:atm], "\\.zip$") %>%
   walk(function(key) {
     filename <- str_extract(key, "\\{.+")
     save_object(object = key, bucket = "goldencheetah-opendata", file = filename)
   })
-```
 
-
-
-next step is to extract all zip files
-```{r}
-library(plyr)
+t1 <- Sys.time()
 # get all the zip files
-zipF <- list.files(path = "D:/X-files/Athlete Files/Metadata", pattern = "*.zip", full.names = TRUE)
+zipF <- list.files(path = "/home/jupyter/goldencheetah_data", pattern = "*.zip", full.names = TRUE)
 
 # unzip all your files
-ldply(.data = zipF, .fun = unzip, exdir = "D:/X-files/Athlete Files/Metadata")
+ldply(.data = zipF, .fun = unzip, exdir = "/home/jupyter/goldencheetah_data_unzipp")
+t2 <- Sys.time()
+print('Time to download and extract all files')
+print(t2-t1)
 ```
-Create table from all json files appended together
+
+
+
+
+
 ```{r}
-json_filenames <- list.files("D:/X-files/Athlete Files/Metadata", pattern="*.json$", full.names=TRUE) # this should give you a character vector, with each file name represented by an entry
-json_filenames
-# start by creating the list of athletes out of all the JSON files that have been merged together
-library(rjson)
-Athlete_metadata_json <- lapply(json_filenames, function(x) fromJSON(file=x)) # a list in which each element is one of your original JSON files
+require("jsonlite")
+require("data.table")
 
-#convert json file to dataframe
-#(not working due to rides and runs)
+t1 <- Sys.time()
+# Get data into a single list
+# Test with n files in a sub folder called test_data
+setwd("/home/jupyter")
+filenames <- list.files(path = "test_data")
+idx_bike <- list() # if we want to filter for "Bike" observations
+for(f in 1:length(filenames)){
+  idx_bike[[f]] <- which(fromJSON(txt=paste0("test_data/",filenames[f]))$RIDES$sport == "Bike")
+}
+# Build all the dataframes in a list called ls_metrics
+ls_metrics <- list()
+for(f in 1:length(filenames)){
+  ls_metrics[[f]] <- fromJSON(txt=paste0("test_data/",filenames[f]))$RIDES$METRICS[idx_bike[[f]],]
+  ls_metrics[[f]][["date"]] <- fromJSON(txt=paste0("test_data/",filenames[f]))$RIDES$date[idx_bike[[f]]]
+  ls_metrics[[f]][["id"]] <-  rep(fromJSON(txt=paste0("test_data/",filenames[f]))$ATHLETE$id, length(ls_metrics[[f]][["date"]]))
+  ls_metrics[[f]][["sport"]] <- fromJSON(txt=paste0("test_data/",filenames[f]))$RIDES$sport[idx_bike[[f]]]
+  #ls_metrics[[f]][["a_skiba_xpower"]] <- fromJSON(txt=paste0("Metadata/",filenames[f]))$RIDES$sport[idx_bike[[f]]] 
+  ls_metrics[[f]][["yob"]] <-  rep(fromJSON(txt=paste0("test_data/",filenames[f]))$ATHLETE$yob, length(ls_metrics[[f]][["date"]]))
+  ls_metrics[[f]][["gender"]] <-  rep(fromJSON(txt=paste0("test_data/",filenames[f]))$ATHLETE$gender, length(ls_metrics[[f]][["date"]])) 
+}
+# Merge into a data.table
+dt_merged <- rbindlist(ls_metrics, fill = TRUE)
+# Reorder columns such that "id", "date", "sport", "yob" and "gender" are the first columns
+# setcolorder(dt_merged, c(colnames(idx_cols),colnames(dt_merged[-idx_cols]))) # this works, but only by reference...saves space but difficult to view
+idx_metadata_cols <- which(colnames(dt_merged) %in% c("date","id","sport","yob","gender"))
+idx_metric_cols <- which(!colnames(dt_merged) %in% c("date","id","sport","yob","gender"))
+dt_merged <- dt_merged[,c(idx_metadata_cols,idx_metric_cols), with=FALSE]
 
-x <- length(Athlete_metadata_json)
-y <- length(Athlete_metadata_json[x]$RIDES[])
+# select only columns required
+dt_merged <- dt_merged[,c('date','id','ride_count','workout_time','time_riding','athlete_weight','total_work','average_power','nonzero_power','max_power','cp_setting','coggan_np','coggan_if','coggan_tss','coggam_variability_index','coggan_tssperhour','1s_critical_power','5s_critical_power','10s_critical_power','15s_critical_power','20s_critical_power','30s_critical_power','1m_critical_power','2m_critical_power','3m_critical_power','5m_critical_power','8m_critical_power','10m_critical_power','20m_critical_power','30m_critical_power','60m_critical_power','time_in_zone_L1','time_in_zone_L2','time_in_zone_L3','time_in_zone_L4','time_in_zone_L5','time_in_zone_L6','time_in_zone_L7','1s_peak_wpk','5s_peak_wpk','10s_peak_wpk','15s_peak_wpk','20s_peak_wpk','30s_peak_wpk','1m_peak_wpk','5m_peak_wpk','10m_peak_wpk','20m_peak_wpk','30m_peak_wpk','60m_peak_wpk')]
+
+coln <- colnames(dt_merged)
+coln_len <- length(coln)
+
+# number of rows in dataframe
+#dt_merged_nrow <- nrow(dt_merged)
+#for(f in 1:dt_merged_nrow){
+#  dt_merged$coggan_np[f] <- dt_merged$coggan_np[[f]][1]
+#  dt_merged$coggan_if[f] <- dt_merged$coggan_if[[f]][1]
+#  dt_merged$coggam_variability_index[f] <- dt_merged$coggam_variability_index[[f]][1]
+#  dt_merged$coggan_tssperhour[f] <- dt_merged$coggan_tssperhour[[f]][1]
+#  dt_merged$average_power[f] <- dt_merged$average_power[[f]][1]
+#  dt_merged$nonzero_power[f] <- dt_merged$nonzero_power[[f]][1]
+#}
+
+coln <- colnames(dt_merged)
+coln_len <- length(coln)
+# only include rows that have an average power value
+dt_merged <- dt_merged[!sapply(dt_merged$average_power, is.null)]
+# only include where rides are longer than 60min
+dt_merged <- dt_merged[!sapply(dt_merged$'60m_critical_power', is.null)]
+dt_merged <- dt_merged[!sapply(dt_merged$'60m_critical_power', is.na)]
+# number of rows in datafram
+dt_merged_nrow <- nrow(dt_merged)
+
+dt_merged$coggan_np <- as.numeric(unlist(lapply(dt_merged$coggan_np, `[[`, 1)))
+dt_merged$coggan_if <- as.numeric(unlist(lapply(dt_merged$coggan_if, `[[`, 1)))
+dt_merged$coggam_variability_index <- as.numeric(unlist(lapply(dt_merged$coggam_variability_index, `[[`, 1)))
+
+dt_merged$average_power <- as.numeric(unlist(lapply(dt_merged$average_power, `[[`, 1)))
+dt_merged$nonzero_power <- as.numeric(unlist(lapply(dt_merged$nonzero_power, `[[`, 1)))
+
+# remove rows with "NULL" values
+zero_idx <- which(dt_merged$coggan_tssperhour=="NULL")
+dt_merged$coggan_tssperhour[zero_idx] <- 0
+dt_merged$coggan_tssperhour <- as.numeric(unlist(lapply(dt_merged$coggan_tssperhour, `[[`, 1)))
+#class(dt_merged$coggan_tssperhour)
 
 
-Athlete_metadata_unlist <- unlist(Athlete_metadata_json)
-str(Athlete_metadata_unlist)
-Athlete_metadata_df <- Athlete_metadata_unlist %>% as.data.frame
+# change column types
+dt_merged$ride_count <- as.numeric(dt_merged$ride_count)
+dt_merged$workout_time <- as.numeric(dt_merged$workout_time)
+dt_merged$time_riding <- as.numeric(dt_merged$time_riding)
+dt_merged$athlete_weight <- as.numeric(dt_merged$athlete_weight)
+dt_merged$total_work <- as.numeric(dt_merged$total_work)
+dt_merged$max_power <- as.numeric(dt_merged$max_power)
+dt_merged$cp_setting <- as.numeric(dt_merged$cp_setting)
+dt_merged$coggan_tss <- as.numeric(dt_merged$coggan_tss)
+dt_merged$'1s_critical_power' <- as.numeric(dt_merged$'1s_critical_power')
+dt_merged$'5s_critical_power' <- as.numeric(dt_merged$'5s_critical_power')
+dt_merged$'10s_critical_power' <- as.numeric(dt_merged$'10s_critical_power')
+dt_merged$'15s_critical_power' <- as.numeric(dt_merged$'15s_critical_power')
+dt_merged$'20s_critical_power' <- as.numeric(dt_merged$'20s_critical_power')
+dt_merged$'30s_critical_power' <- as.numeric(dt_merged$'30s_critical_power')
+dt_merged$'1m_critical_power' <- as.numeric(dt_merged$'1m_critical_power')
+dt_merged$'2m_critical_power' <- as.numeric(dt_merged$'2m_critical_power')
+dt_merged$'3m_critical_power' <- as.numeric(dt_merged$'3m_critical_power')
+dt_merged$'5m_critical_power' <- as.numeric(dt_merged$'5m_critical_power')
+dt_merged$'8m_critical_power' <- as.numeric(dt_merged$'8m_critical_power')
+dt_merged$'10m_critical_power' <- as.numeric(dt_merged$'10m_critical_power')
+dt_merged$'20m_critical_power' <- as.numeric(dt_merged$'20m_critical_power')
+dt_merged$'30m_critical_power' <- as.numeric(dt_merged$'30m_critical_power')
+#dt_merged$'60m_critical_power' <- as.numeric(dt_merged$'60_critical_power')
+dt_merged$time_in_zone_L1 <- as.numeric(dt_merged$time_in_zone_L1)
+dt_merged$time_in_zone_L2 <- as.numeric(dt_merged$time_in_zone_L2)
+dt_merged$time_in_zone_L3 <- as.numeric(dt_merged$time_in_zone_L3)
+dt_merged$time_in_zone_L4 <- as.numeric(dt_merged$time_in_zone_L4)
+dt_merged$time_in_zone_L5 <- as.numeric(dt_merged$time_in_zone_L5)
+dt_merged$time_in_zone_L6 <- as.numeric(dt_merged$time_in_zone_L6)
+dt_merged$time_in_zone_L7 <- as.numeric(dt_merged$time_in_zone_L7)
+dt_merged$'1s_peak_wpk' <- as.numeric(dt_merged$'1s_peak_wpk')
+dt_merged$'5s_peak_wpk' <- as.numeric(dt_merged$'5s_peak_wpk')
+dt_merged$'10s_peak_wpk' <- as.numeric(dt_merged$'10s_peak_wpk')
+dt_merged$'15s_peak_wpk' <- as.numeric(dt_merged$'15s_peak_wpk')
+dt_merged$'20s_peak_wpk' <- as.numeric(dt_merged$'20s_peak_wpk')
+dt_merged$'30s_peak_wpk' <- as.numeric(dt_merged$'30s_peak_wpk')
+dt_merged$'1m_peak_wpk' <- as.numeric(dt_merged$'1m_peak_wpk')
+dt_merged$'5m_peak_wpk' <- as.numeric(dt_merged$'5m_peak_wpk')
+dt_merged$'10m_peak_wpk' <- as.numeric(dt_merged$'10m_peak_wpk')
+dt_merged$'20m_peak_wpk' <- as.numeric(dt_merged$'20m_peak_wpk')
+dt_merged$'30m_peak_wpk' <- as.numeric(dt_merged$'30m_peak_wpk')
+#dt_merged$'60m_peak_wpk' <- as.numeric(dt_merged$'60_peak_wpk')
+
+#class(dt_merged$coggan_tssperhour)
+# rename columns that start with a number for BigQuery upload
+setnames(dt_merged, old=c('1s_critical_power'), new=c('critical_power_1s'))
+setnames(dt_merged, old=c('5s_critical_power'), new=c('critical_power_5s'))
+setnames(dt_merged, old=c('10s_critical_power'), new=c('critical_power_10s'))
+setnames(dt_merged, old=c('15s_critical_power'), new=c('critical_power_15s'))
+setnames(dt_merged, old=c('20s_critical_power'), new=c('critical_power_20s'))
+setnames(dt_merged, old=c('30s_critical_power'), new=c('critical_power_30s'))
+setnames(dt_merged, old=c('1m_critical_power'), new=c('critical_power_1m'))
+setnames(dt_merged, old=c('2m_critical_power'), new=c('critical_power_2m'))
+setnames(dt_merged, old=c('3m_critical_power'), new=c('critical_power_3m'))
+setnames(dt_merged, old=c('5m_critical_power'), new=c('critical_power_5m'))
+setnames(dt_merged, old=c('8m_critical_power'), new=c('critical_power_8m'))
+setnames(dt_merged, old=c('10m_critical_power'), new=c('critical_power_10m'))
+setnames(dt_merged, old=c('20m_critical_power'), new=c('critical_power_20m'))
+setnames(dt_merged, old=c('30m_critical_power'), new=c('critical_power_30m'))
+setnames(dt_merged, old=c('60m_critical_power'), new=c('critical_power_60m'))
+setnames(dt_merged, old=c('1s_peak_wpk'), new=c('peak_wpk_1s'))
+setnames(dt_merged, old=c('5s_peak_wpk'), new=c('peak_wpk_5s'))
+setnames(dt_merged, old=c('10s_peak_wpk'), new=c('peak_wpk_10s'))
+setnames(dt_merged, old=c('15s_peak_wpk'), new=c('peak_wpk_15s'))
+setnames(dt_merged, old=c('20s_peak_wpk'), new=c('peak_wpk_20s'))
+setnames(dt_merged, old=c('30s_peak_wpk'), new=c('peak_wpk_30s'))
+setnames(dt_merged, old=c('1m_peak_wpk'), new=c('peak_wpk_1m'))
+setnames(dt_merged, old=c('5m_peak_wpk'), new=c('peak_wpk_5m'))
+setnames(dt_merged, old=c('10m_peak_wpk'), new=c('peak_wpk_10m'))
+setnames(dt_merged, old=c('20m_peak_wpk'), new=c('peak_wpk_20m'))
+setnames(dt_merged, old=c('30m_peak_wpk'), new=c('peak_wpk_30m'))
+#setnames(dt_merged, old=c('60m_peak_wpk'), new=c('peak_wpk_60m'))
+
+t2 <- Sys.time()
+print('Time to clean data')
+print(t2-t1)
+
+#write to bigquery
+#t3 <- Sys.time()
+#library(bigQueryR)
+# use this to upload data to bigquery table
+#bqr_auth()
+#bqr_upload_data(projectId = "x", 
+#                datasetId = "y", 
+#                tableId = "all_metadata_test", #name of the table 
+#                upload_data = dt_merged) #where the data is coming from
+#t4 <- Sys.time()
+#print(t3-t4)
 ```
 
-Add a new chunk by clicking the *Insert Chunk* button on the toolbar or by pressing *Ctrl+Alt+I*.
-
-When you save the notebook, an HTML file containing the code and output will be saved alongside it (click the *Preview* button or press *Ctrl+Shift+K* to preview the HTML file).
-
-The preview shows you a rendered HTML copy of the contents of the editor. Consequently, unlike *Knit*, *Preview* does not run any R code chunks. Instead, the output of the chunk when it was last run in the editor is displayed.
-
-
-install.packages("tidyjson")
-require('tidyjson')
-
-
-setwd("D:/X-files/Athlete Files/Metadata")
-Poes <- jsonlite::fromJSON("{000c6417-e1e4-497e-89e6-bb21e17ec355}.json", simplifyDataFrame = TRUE)
-str(Poes)
-
-Poes_df <- Poes %>% as.data.frame
-
-
-json <- read_json("{000c6417-e1e4-497e-89e6-bb21e17ec355}.json")
-json_path(json, "$.RIDES.sport")
-idx_BIKE <- which(json_path(json, "$.RIDES.sport") == "Bike")
