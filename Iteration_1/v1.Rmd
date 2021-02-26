@@ -56,7 +56,7 @@ idx_bike <- list() # if we want to filter for "Bike" observations
 registerDoParallel(cores = 16)
 # registerDoSEQ()
 t1 <- Sys.time()
-idx_bike <- foreach(f = 1:2000, .combine = c, .multicombine = TRUE) %dopar% {
+idx_bike <- foreach(f = 1:6605, .combine = c, .multicombine = TRUE, .errorhandling = "remove") %dopar% {
   test <- try({
     which(fromJSON(txt=filenames[f])$RIDES$sport == "Bike" |
           fromJSON(txt=filenames[f])$RIDES$sport == "VirtualRide")
@@ -69,11 +69,11 @@ print(t2 - t1)
 
 dt_merged <- list()
 
-dt_merged <- foreach(f = 1:2000, .combine = c, .multicombine = TRUE) %dopar% {
+dt_merged <- foreach(f = 4001:6605, .combine = c, .multicombine = TRUE, .errorhandling = "remove") %dopar% {
   test <- try({
     dt_merged <- fromJSON(txt=filenames[f])$RIDES$METRICS[idx_bike[[f]],]
     dt_merged[["date"]] <- fromJSON(txt=filenames[f])$RIDES$date[idx_bike[[f]]]
-    dt_merged[["id"]] <-  filenames[f] #rep(fromJSON(txt=filenames[f])$ATHLETE$id, length(dt_merged[[f]][["date"]]))
+    dt_merged[["id"]] <-  as.list(filenames[f]) #rep(fromJSON(txt=filenames[f])$ATHLETE$id, length(dt_merged[[f]][["date"]]))
     dt_merged[["sport"]] <- fromJSON(txt=filenames[f])$RIDES$sport[idx_bike[[f]]]
     dt_merged[["yob"]] <-  fromJSON(txt=filenames[f])$ATHLETE$yob
     dt_merged[["gender"]] <-  fromJSON(txt=filenames[f])$ATHLETE$gender
@@ -85,6 +85,8 @@ t3 <- Sys.time()
 paste0("time to run dt_merged loop")
 print(t3 - t2)
 
+
+
 # Merge into a data.table
 dt_merged <- rbindlist(dt_merged, fill = TRUE)
 #head(dt_merged)
@@ -95,8 +97,8 @@ idx_metric_cols <- which(!colnames(dt_merged) %in% c("date","id","sport","yob","
 dt_merged <- dt_merged[,c(idx_metadata_cols,idx_metric_cols), with=FALSE]
 
 #set all NA to 0 that are not in a list
-dt_merged[is.na(dt_merged)] <- 0
-dt_merged[is.null(dt_merged)] <- 0
+#dt_merged[is.na(dt_merged)] <- 0
+#dt_merged[is.null(dt_merged)] <- 0
 
 idx_list <- which(sapply(dt_merged, class) == "list")
 #idx_list
@@ -243,24 +245,27 @@ setnames(dt_merged, old=c('20m_peak_wpk'), new=c('peak_wpk_20m'))
 setnames(dt_merged, old=c('30m_peak_wpk'), new=c('peak_wpk_30m'))
 setnames(dt_merged, old=c('60m_peak_wpk'), new=c('peak_wpk_60m'))
 
+dt_merged$id <- unlist(dt_merged$id)
+
 #idx_list <- which(sapply(dt_merged, class)=="list") # this is empty, implying no more list types
 
 t4 <- Sys.time()
 paste0('Time to subset list elements, convert data types')
 print(t4-t3)
-      
+  
+
+    
 #write to bigquery
 t3 <- Sys.time()
 library(bigQueryR)
 # use this to upload data to bigquery table
 bqr_auth()
-bqr_upload_data(projectId = "xxx", 
+bqr_upload_data(projectId = "algebraic-pier-304102", 
                 datasetId = "goldencheetah_metadata", 
-                tableId = "all_metadata_1_2000", #name of the table 
+                tableId = "all_metadata_4001_6605", #name of the table 
                 upload_data = dt_merged) #where the data is coming from
 t4 <- Sys.time()
 paste0('Uploaded to BigQuery')
 print(t3-t4)
-
 ```
 
