@@ -40,84 +40,136 @@ print('Time to download and extract all files')
 print(t2-t1)
 ```
 
-
-
-
+Parse all the files into a bigquery table
 
 ```{r}
-require("jsonlite")
-require("data.table")
-
-t1 <- Sys.time()
+require(jsonlite)
+require(data.table)
+require(foreach)
+require(doParallel)
 # Get data into a single list
-# Test with n files in a sub folder called test_data
-setwd("/home/jupyter")
-filenames <- list.files(path = "test_data")
+
+setwd("/home/jupyter/goldencheetah_data_unzipp/")
+filenames <- list.files(path = "/home/jupyter/goldencheetah_data_unzipp/")
 idx_bike <- list() # if we want to filter for "Bike" observations
-for(f in 1:length(filenames)){
-  idx_bike[[f]] <- which(fromJSON(txt=paste0("test_data/",filenames[f]))$RIDES$sport == "Bike")
+
+registerDoParallel(cores = 16)
+# registerDoSEQ()
+t1 <- Sys.time()
+idx_bike <- foreach(f = 1:2000, .combine = c, .multicombine = TRUE) %dopar% {
+  test <- try({
+    which(fromJSON(txt=filenames[f])$RIDES$sport == "Bike" |
+          fromJSON(txt=filenames[f])$RIDES$sport == "VirtualRide")
+  })
+  list(test)
 }
-# Build all the dataframes in a list called ls_metrics
-ls_metrics <- list()
-for(f in 1:length(filenames)){
-  ls_metrics[[f]] <- fromJSON(txt=paste0("test_data/",filenames[f]))$RIDES$METRICS[idx_bike[[f]],]
-  ls_metrics[[f]][["date"]] <- fromJSON(txt=paste0("test_data/",filenames[f]))$RIDES$date[idx_bike[[f]]]
-  ls_metrics[[f]][["id"]] <-  rep(fromJSON(txt=paste0("test_data/",filenames[f]))$ATHLETE$id, length(ls_metrics[[f]][["date"]]))
-  ls_metrics[[f]][["sport"]] <- fromJSON(txt=paste0("test_data/",filenames[f]))$RIDES$sport[idx_bike[[f]]]
-  #ls_metrics[[f]][["a_skiba_xpower"]] <- fromJSON(txt=paste0("Metadata/",filenames[f]))$RIDES$sport[idx_bike[[f]]] 
-  ls_metrics[[f]][["yob"]] <-  rep(fromJSON(txt=paste0("test_data/",filenames[f]))$ATHLETE$yob, length(ls_metrics[[f]][["date"]]))
-  ls_metrics[[f]][["gender"]] <-  rep(fromJSON(txt=paste0("test_data/",filenames[f]))$ATHLETE$gender, length(ls_metrics[[f]][["date"]])) 
+t2 <- Sys.time()
+paste0("time to run bike index loop")
+print(t2 - t1)
+
+dt_merged <- list()
+
+dt_merged <- foreach(f = 1:2000, .combine = c, .multicombine = TRUE) %dopar% {
+  test <- try({
+    dt_merged <- fromJSON(txt=filenames[f])$RIDES$METRICS[idx_bike[[f]],]
+    dt_merged[["date"]] <- fromJSON(txt=filenames[f])$RIDES$date[idx_bike[[f]]]
+    dt_merged[["id"]] <-  rep(fromJSON(txt=filenames[f])$ATHLETE$id, length(dt_merged[[f]][["date"]]))
+    dt_merged[["sport"]] <- fromJSON(txt=filenames[f])$RIDES$sport[idx_bike[[f]]]
+    dt_merged[["yob"]] <-  rep(fromJSON(txt=filenames[f])$ATHLETE$yob, length(dt_merged[[f]][["date"]]))
+    dt_merged[["gender"]] <-  rep(fromJSON(txt=filenames[f])$ATHLETE$gender, length(dt_merged[[f]][["date"]]))
+    })
+  list(dt_merged)
 }
+
+t3 <- Sys.time()
+paste0("time to run dt_merged loop")
+print(t3 - t2)
+
 # Merge into a data.table
-dt_merged <- rbindlist(ls_metrics, fill = TRUE)
+dt_merged <- rbindlist(dt_merged, fill = TRUE)
 # Reorder columns such that "id", "date", "sport", "yob" and "gender" are the first columns
-# setcolorder(dt_merged, c(colnames(idx_cols),colnames(dt_merged[-idx_cols]))) # this works, but only by reference...saves space but difficult to view
 idx_metadata_cols <- which(colnames(dt_merged) %in% c("date","id","sport","yob","gender"))
 idx_metric_cols <- which(!colnames(dt_merged) %in% c("date","id","sport","yob","gender"))
 dt_merged <- dt_merged[,c(idx_metadata_cols,idx_metric_cols), with=FALSE]
 
+#set all NA to 0 that are not in a list
+dt_merged[is.na(dt_merged)] <- 0
+dt_merged[is.null(dt_merged)] <- 0
+
+idx_list <- which(sapply(dt_merged, class) == "list")
+idx_list
+
 # select only columns required
-dt_merged <- dt_merged[,c('date','id','ride_count','workout_time','time_riding','athlete_weight','total_work','average_power','nonzero_power','max_power','cp_setting','coggan_np','coggan_if','coggan_tss','coggam_variability_index','coggan_tssperhour','1s_critical_power','5s_critical_power','10s_critical_power','15s_critical_power','20s_critical_power','30s_critical_power','1m_critical_power','2m_critical_power','3m_critical_power','5m_critical_power','8m_critical_power','10m_critical_power','20m_critical_power','30m_critical_power','60m_critical_power','time_in_zone_L1','time_in_zone_L2','time_in_zone_L3','time_in_zone_L4','time_in_zone_L5','time_in_zone_L6','time_in_zone_L7','1s_peak_wpk','5s_peak_wpk','10s_peak_wpk','15s_peak_wpk','20s_peak_wpk','30s_peak_wpk','1m_peak_wpk','5m_peak_wpk','10m_peak_wpk','20m_peak_wpk','30m_peak_wpk','60m_peak_wpk')]
+dt_merged <- dt_merged[,c('date','id','ride_count','workout_time','time_riding','athlete_weight','total_work','average_power','nonzero_power',
+                          'max_power','cp_setting','coggan_np','coggan_if','coggan_tss','coggam_variability_index','coggan_tssperhour',
+                          '1s_critical_power','5s_critical_power','10s_critical_power','15s_critical_power','20s_critical_power',
+                          '30s_critical_power','1m_critical_power','2m_critical_power','3m_critical_power','5m_critical_power','8m_critical_power',
+                          '10m_critical_power','20m_critical_power','30m_critical_power','60m_critical_power','time_in_zone_L1','time_in_zone_L2',
+                          'time_in_zone_L3','time_in_zone_L4','time_in_zone_L5','time_in_zone_L6','time_in_zone_L7','1s_peak_wpk','5s_peak_wpk',
+                          '10s_peak_wpk','15s_peak_wpk','20s_peak_wpk','30s_peak_wpk','1m_peak_wpk','5m_peak_wpk','10m_peak_wpk','20m_peak_wpk',
+                          '30m_peak_wpk','60m_peak_wpk')]
 
-coln <- colnames(dt_merged)
-coln_len <- length(coln)
 
-# number of rows in dataframe
-#dt_merged_nrow <- nrow(dt_merged)
-#for(f in 1:dt_merged_nrow){
-#  dt_merged$coggan_np[f] <- dt_merged$coggan_np[[f]][1]
-#  dt_merged$coggan_if[f] <- dt_merged$coggan_if[[f]][1]
-#  dt_merged$coggam_variability_index[f] <- dt_merged$coggam_variability_index[[f]][1]
-#  dt_merged$coggan_tssperhour[f] <- dt_merged$coggan_tssperhour[[f]][1]
-#  dt_merged$average_power[f] <- dt_merged$average_power[[f]][1]
-#  dt_merged$nonzero_power[f] <- dt_merged$nonzero_power[[f]][1]
-#}
-
-coln <- colnames(dt_merged)
-coln_len <- length(coln)
-# only include rows that have an average power value
+# only include rows that have an average power value where a 1sec power value is not null
 dt_merged <- dt_merged[!sapply(dt_merged$average_power, is.null)]
-# only include where rides are longer than 60min
-dt_merged <- dt_merged[!sapply(dt_merged$'60m_critical_power', is.null)]
-dt_merged <- dt_merged[!sapply(dt_merged$'60m_critical_power', is.na)]
-# number of rows in datafram
-dt_merged_nrow <- nrow(dt_merged)
+dt_merged <- dt_merged[!sapply(dt_merged$'1s_peak_wpk', is.null)]
 
-dt_merged$coggan_np <- as.numeric(unlist(lapply(dt_merged$coggan_np, `[[`, 1)))
-dt_merged$coggan_if <- as.numeric(unlist(lapply(dt_merged$coggan_if, `[[`, 1)))
-dt_merged$coggam_variability_index <- as.numeric(unlist(lapply(dt_merged$coggam_variability_index, `[[`, 1)))
-
+# fix list columns that have null values
+# remove rows with "NULL" values
+zero_idx <- which(dt_merged$average_power=="NULL")
+dt_merged$average_power[zero_idx] <- 0
 dt_merged$average_power <- as.numeric(unlist(lapply(dt_merged$average_power, `[[`, 1)))
+# remove rows with "NULL" values
+zero_idx <- which(dt_merged$coggan_np=="NULL")
+dt_merged$coggan_np[zero_idx] <- 0
+dt_merged$coggan_np <- as.numeric(unlist(lapply(dt_merged$coggan_np, `[[`, 1)))
+# remove rows with "NULL" values
+zero_idx <- which(dt_merged$coggan_if=="NULL")
+dt_merged$coggan_if[zero_idx] <- 0
+dt_merged$coggan_if <- as.numeric(unlist(lapply(dt_merged$coggan_if, `[[`, 1)))
+# remove rows with "NULL" values
+zero_idx <- which(dt_merged$nonzero_power=="NULL")
+dt_merged$nonzero_power[zero_idx] <- 0
 dt_merged$nonzero_power <- as.numeric(unlist(lapply(dt_merged$nonzero_power, `[[`, 1)))
-
+# remove rows with "NULL" values
+zero_idx <- which(dt_merged$coggam_variability_index=="NULL")
+dt_merged$coggam_variability_index[zero_idx] <- 0
+dt_merged$coggam_variability_index <- as.numeric(unlist(lapply(dt_merged$coggam_variability_index, `[[`, 1)))
 # remove rows with "NULL" values
 zero_idx <- which(dt_merged$coggan_tssperhour=="NULL")
 dt_merged$coggan_tssperhour[zero_idx] <- 0
 dt_merged$coggan_tssperhour <- as.numeric(unlist(lapply(dt_merged$coggan_tssperhour, `[[`, 1)))
-#class(dt_merged$coggan_tssperhour)
-
+# remove rows with "NULL" values
+zero_idx <- which(dt_merged$time_in_zone_L1=="NULL")
+dt_merged$time_in_zone_L1[zero_idx] <- 0
+dt_merged$time_in_zone_L1 <- as.numeric(unlist(lapply(dt_merged$time_in_zone_L1, `[[`, 1)))
+# remove rows with "NULL" values
+zero_idx <- which(dt_merged$time_in_zone_L2=="NULL")
+dt_merged$time_in_zone_L2[zero_idx] <- 0
+dt_merged$time_in_zone_L2 <- as.numeric(unlist(lapply(dt_merged$time_in_zone_L2, `[[`, 1)))
+# remove rows with "NULL" values
+zero_idx <- which(dt_merged$time_in_zone_L3=="NULL")
+dt_merged$time_in_zone_L3[zero_idx] <- 0
+dt_merged$time_in_zone_L3 <- as.numeric(unlist(lapply(dt_merged$time_in_zone_L3, `[[`, 1)))
+# remove rows with "NULL" values
+zero_idx <- which(dt_merged$time_in_zone_L4=="NULL")
+dt_merged$time_in_zone_L4[zero_idx] <- 0
+dt_merged$time_in_zone_L4 <- as.numeric(unlist(lapply(dt_merged$time_in_zone_L4, `[[`, 1)))
+# remove rows with "NULL" values
+zero_idx <- which(dt_merged$time_in_zone_L5=="NULL")
+dt_merged$time_in_zone_L5[zero_idx] <- 0
+dt_merged$time_in_zone_L5 <- as.numeric(unlist(lapply(dt_merged$time_in_zone_L5, `[[`, 1)))
+# remove rows with "NULL" values
+zero_idx <- which(dt_merged$time_in_zone_L6=="NULL")
+dt_merged$time_in_zone_L6[zero_idx] <- 0
+dt_merged$time_in_zone_L6 <- as.numeric(unlist(lapply(dt_merged$time_in_zone_L6, `[[`, 1)))
+# remove rows with "NULL" values
+zero_idx <- which(dt_merged$time_in_zone_L7=="NULL")
+dt_merged$time_in_zone_L7[zero_idx] <- 0
+dt_merged$time_in_zone_L7 <- as.numeric(unlist(lapply(dt_merged$time_in_zone_L7, `[[`, 1)))
 
 # change column types
+dt_merged$date <- as.POSIXct(dt_merged$date, "%Y-%m-%d %H:%M:%S")
 dt_merged$ride_count <- as.numeric(dt_merged$ride_count)
 dt_merged$workout_time <- as.numeric(dt_merged$workout_time)
 dt_merged$time_riding <- as.numeric(dt_merged$time_riding)
@@ -140,7 +192,7 @@ dt_merged$'8m_critical_power' <- as.numeric(dt_merged$'8m_critical_power')
 dt_merged$'10m_critical_power' <- as.numeric(dt_merged$'10m_critical_power')
 dt_merged$'20m_critical_power' <- as.numeric(dt_merged$'20m_critical_power')
 dt_merged$'30m_critical_power' <- as.numeric(dt_merged$'30m_critical_power')
-#dt_merged$'60m_critical_power' <- as.numeric(dt_merged$'60_critical_power')
+dt_merged$'60m_critical_power' <- as.numeric(dt_merged$'60m_critical_power')
 dt_merged$time_in_zone_L1 <- as.numeric(dt_merged$time_in_zone_L1)
 dt_merged$time_in_zone_L2 <- as.numeric(dt_merged$time_in_zone_L2)
 dt_merged$time_in_zone_L3 <- as.numeric(dt_merged$time_in_zone_L3)
@@ -159,8 +211,7 @@ dt_merged$'5m_peak_wpk' <- as.numeric(dt_merged$'5m_peak_wpk')
 dt_merged$'10m_peak_wpk' <- as.numeric(dt_merged$'10m_peak_wpk')
 dt_merged$'20m_peak_wpk' <- as.numeric(dt_merged$'20m_peak_wpk')
 dt_merged$'30m_peak_wpk' <- as.numeric(dt_merged$'30m_peak_wpk')
-#dt_merged$'60m_peak_wpk' <- as.numeric(dt_merged$'60_peak_wpk')
-
+dt_merged$'60m_peak_wpk' <- as.numeric(dt_merged$'60m_peak_wpk')
 #class(dt_merged$coggan_tssperhour)
 # rename columns that start with a number for BigQuery upload
 setnames(dt_merged, old=c('1s_critical_power'), new=c('critical_power_1s'))
@@ -189,22 +240,26 @@ setnames(dt_merged, old=c('5m_peak_wpk'), new=c('peak_wpk_5m'))
 setnames(dt_merged, old=c('10m_peak_wpk'), new=c('peak_wpk_10m'))
 setnames(dt_merged, old=c('20m_peak_wpk'), new=c('peak_wpk_20m'))
 setnames(dt_merged, old=c('30m_peak_wpk'), new=c('peak_wpk_30m'))
-#setnames(dt_merged, old=c('60m_peak_wpk'), new=c('peak_wpk_60m'))
+setnames(dt_merged, old=c('60m_peak_wpk'), new=c('peak_wpk_60m'))
 
-t2 <- Sys.time()
-print('Time to clean data')
-print(t2-t1)
+idx_list <- which(sapply(dt_merged, class)=="list") # this is empty, implying no more list types
 
+t4 <- Sys.time()
+paste0('Time to subset list elements, convert data types')
+print(t4-t3)
+      
 #write to bigquery
-#t3 <- Sys.time()
-#library(bigQueryR)
+t3 <- Sys.time()
+library(bigQueryR)
 # use this to upload data to bigquery table
-#bqr_auth()
-#bqr_upload_data(projectId = "x", 
-#                datasetId = "y", 
-#                tableId = "all_metadata_test", #name of the table 
-#                upload_data = dt_merged) #where the data is coming from
-#t4 <- Sys.time()
-#print(t3-t4)
+bqr_auth()
+bqr_upload_data(projectId = "algebraic-pier-304102", 
+                datasetId = "goldencheetah_metadata", 
+                tableId = "all_metadata", #name of the table 
+                upload_data = dt_merged) #where the data is coming from
+t4 <- Sys.time()
+paste0('Uploaded to BigQuery')
+print(t3-t4)
+
 ```
 
