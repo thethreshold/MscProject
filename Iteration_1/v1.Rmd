@@ -73,10 +73,10 @@ dt_merged <- foreach(f = 1:2000, .combine = c, .multicombine = TRUE) %dopar% {
   test <- try({
     dt_merged <- fromJSON(txt=filenames[f])$RIDES$METRICS[idx_bike[[f]],]
     dt_merged[["date"]] <- fromJSON(txt=filenames[f])$RIDES$date[idx_bike[[f]]]
-    dt_merged[["id"]] <-  rep(fromJSON(txt=filenames[f])$ATHLETE$id, length(dt_merged[[f]][["date"]]))
+    dt_merged[["id"]] <-  filenames[f] #rep(fromJSON(txt=filenames[f])$ATHLETE$id, length(dt_merged[[f]][["date"]]))
     dt_merged[["sport"]] <- fromJSON(txt=filenames[f])$RIDES$sport[idx_bike[[f]]]
-    dt_merged[["yob"]] <-  rep(fromJSON(txt=filenames[f])$ATHLETE$yob, length(dt_merged[[f]][["date"]]))
-    dt_merged[["gender"]] <-  rep(fromJSON(txt=filenames[f])$ATHLETE$gender, length(dt_merged[[f]][["date"]]))
+    dt_merged[["yob"]] <-  fromJSON(txt=filenames[f])$ATHLETE$yob
+    dt_merged[["gender"]] <-  fromJSON(txt=filenames[f])$ATHLETE$gender
     })
   list(dt_merged)
 }
@@ -87,6 +87,8 @@ print(t3 - t2)
 
 # Merge into a data.table
 dt_merged <- rbindlist(dt_merged, fill = TRUE)
+#head(dt_merged)
+
 # Reorder columns such that "id", "date", "sport", "yob" and "gender" are the first columns
 idx_metadata_cols <- which(colnames(dt_merged) %in% c("date","id","sport","yob","gender"))
 idx_metric_cols <- which(!colnames(dt_merged) %in% c("date","id","sport","yob","gender"))
@@ -97,10 +99,10 @@ dt_merged[is.na(dt_merged)] <- 0
 dt_merged[is.null(dt_merged)] <- 0
 
 idx_list <- which(sapply(dt_merged, class) == "list")
-idx_list
+#idx_list
 
 # select only columns required
-dt_merged <- dt_merged[,c('date','id','ride_count','workout_time','time_riding','athlete_weight','total_work','average_power','nonzero_power',
+dt_merged <- dt_merged[,c('date','id','sport','gender','yob','ride_count','workout_time','time_riding','athlete_weight','total_work','average_power','nonzero_power',
                           'max_power','cp_setting','coggan_np','coggan_if','coggan_tss','coggam_variability_index','coggan_tssperhour',
                           '1s_critical_power','5s_critical_power','10s_critical_power','15s_critical_power','20s_critical_power',
                           '30s_critical_power','1m_critical_power','2m_critical_power','3m_critical_power','5m_critical_power','8m_critical_power',
@@ -108,7 +110,6 @@ dt_merged <- dt_merged[,c('date','id','ride_count','workout_time','time_riding',
                           'time_in_zone_L3','time_in_zone_L4','time_in_zone_L5','time_in_zone_L6','time_in_zone_L7','1s_peak_wpk','5s_peak_wpk',
                           '10s_peak_wpk','15s_peak_wpk','20s_peak_wpk','30s_peak_wpk','1m_peak_wpk','5m_peak_wpk','10m_peak_wpk','20m_peak_wpk',
                           '30m_peak_wpk','60m_peak_wpk')]
-
 
 # only include rows that have an average power value where a 1sec power value is not null
 dt_merged <- dt_merged[!sapply(dt_merged$average_power, is.null)]
@@ -242,7 +243,7 @@ setnames(dt_merged, old=c('20m_peak_wpk'), new=c('peak_wpk_20m'))
 setnames(dt_merged, old=c('30m_peak_wpk'), new=c('peak_wpk_30m'))
 setnames(dt_merged, old=c('60m_peak_wpk'), new=c('peak_wpk_60m'))
 
-idx_list <- which(sapply(dt_merged, class)=="list") # this is empty, implying no more list types
+#idx_list <- which(sapply(dt_merged, class)=="list") # this is empty, implying no more list types
 
 t4 <- Sys.time()
 paste0('Time to subset list elements, convert data types')
@@ -253,9 +254,9 @@ t3 <- Sys.time()
 library(bigQueryR)
 # use this to upload data to bigquery table
 bqr_auth()
-bqr_upload_data(projectId = "algebraic-pier-304102", 
+bqr_upload_data(projectId = "xxx", 
                 datasetId = "goldencheetah_metadata", 
-                tableId = "all_metadata", #name of the table 
+                tableId = "all_metadata_1_2000", #name of the table 
                 upload_data = dt_merged) #where the data is coming from
 t4 <- Sys.time()
 paste0('Uploaded to BigQuery')
