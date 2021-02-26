@@ -169,7 +169,7 @@ dt_merged$time_in_zone_L7[zero_idx] <- 0
 dt_merged$time_in_zone_L7 <- as.numeric(unlist(lapply(dt_merged$time_in_zone_L7, `[[`, 1)))
 
 # change column types
-dt_merged$date <- as.POSIXct(dt_merged$date, "%Y-%m-%d %H:%M:%S")
+#dt_merged$date <- as.POSIXct(dt_merged$date, "%Y-%m-%d %H:%M:%S")
 dt_merged$ride_count <- as.numeric(dt_merged$ride_count)
 dt_merged$workout_time <- as.numeric(dt_merged$workout_time)
 dt_merged$time_riding <- as.numeric(dt_merged$time_riding)
