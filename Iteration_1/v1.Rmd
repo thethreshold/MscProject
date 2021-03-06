@@ -260,12 +260,82 @@ t3 <- Sys.time()
 library(bigQueryR)
 # use this to upload data to bigquery table
 bqr_auth()
-bqr_upload_data(projectId = "algebraic-pier-304102", 
-                datasetId = "goldencheetah_metadata", 
+bqr_upload_data(projectId = "xxx", 
+                datasetId = "goldencheetah_metadata",#name of gcp projectid
                 tableId = "all_metadata_4001_6605", #name of the table 
                 upload_data = dt_merged) #where the data is coming from
 t4 <- Sys.time()
 paste0('Uploaded to BigQuery')
 print(t3-t4)
 ```
+Imported exported bigquery data into R
+convert to datatable and summarise all fields
+```{r}
+library(bigrquery)
+projectid <- "xxx"
+query <-
+"
+create table `algebraic-pier-304102.goldencheetah_metadata.all_metadata_summary` as
+SELECT
+    a.id,
+    a.gender,
+    a.yob,
+    round(sum(ride_count),2) as no_of_rides,
+    round(avg(workout_time),2) as avg_workout_time,
+    round(avg(time_riding),2) as avg_time_riding,
+    round(avg(athlete_weight),2) as avg_weight,
+    round(avg(a.average_power),2) as avg_power_all_rides,
+    round(avg(a.nonzero_power),2) as avg_nonzero_power_all_rides,
+    round(max(max_power),2) as max_power,
+    round(max(cp_setting),2) as best_cp_setting,
+    round(avg(coggan_np),2) as avg_coggan_np,
+    round(avg(coggam_variability_index),2) as avg_coggan_variability_index,
+    round(max(critical_power_1s),2) as max_critical_power_1s,	
+    round(max(critical_power_5s),2) as max_critical_power_5s,
+    round(max(critical_power_10s),2) as max_critical_power_10s,
+    round(max(critical_power_15s),2) as max_critical_power_15s,	
+    round(max(critical_power_20s),2) as max_critical_power_20s,
+    round(max(critical_power_30s),2) as max_critical_power_30s,	
+    round(max(critical_power_1m),2) as max_critical_power_1m,
+    round(max(critical_power_2m),2) as max_critical_power_2m,
+    round(max(critical_power_3m),2) as max_critical_power_3m,
+    round(max(critical_power_5m),2) as max_critical_power_5m,
+    round(max(critical_power_8m),2) as max_critical_power_8m,
+    round(max(critical_power_10m),2) as max_critical_power_10m,
+    round(max(critical_power_20m),2) as max_critical_power_20m,
+    round(max(critical_power_30m),2) as max_critical_power_30m,
+    round(max(critical_power_60m),2) as max_critical_power_60m,
+    round(avg(time_in_zone_L1),2) as avg_time_in_zone_L1,
+    round(avg(time_in_zone_L2),2) as avg_time_in_zone_L2,
+    round(avg(time_in_zone_L3),2) as avg_time_in_zone_L3,
+    round(avg(time_in_zone_L4),2) as avg_time_in_zone_L4,
+    round(avg(time_in_zone_L5),2) as avg_time_in_zone_L5,
+    round(avg(time_in_zone_L6),2) as avg_time_in_zone_L6,
+    round(avg(time_in_zone_L7),2) as avg_time_in_zone_L7,
+    round(max(peak_wpk_1s),2) as max_peak_wpk_1s,
+    round(max(peak_wpk_5s),2) as max_peak_wpk_5s,
+    round(max(peak_wpk_10s),2) as max_peak_wpk_10s,	
+    round(max(peak_wpk_15s),2) as max_peak_wpk_15s,	
+    round(max(peak_wpk_20s),2) as max_peak_wpk_20s,	
+    round(max(peak_wpk_30s),2) as max_peak_wpk_30s,	
+    round(max(peak_wpk_1m),2) as max_peak_wpk_1m,
+    round(max(peak_wpk_5m),2) as max_peak_wpk_5m,
+    round(max(peak_wpk_10m),2) as max_peak_wpk_10m,	
+    round(max(peak_wpk_20m),2) as max_peak_wpk_20m,	
+    round(max(peak_wpk_30m),2) as max_peak_wpk_30m,	
+    round(max(peak_wpk_60m),2) as max_peak_wpk_60m
+    
 
+FROM 
+    `algebraic-pier-304102.goldencheetah_metadata.all_metadata` a
+--WHERE
+--   a.id = '{4ed32d19-aeb6-43c1-aa11-7c41a1e935ee}.json' 
+GROUP BY
+   a.id,
+   a.yob,
+   a.gender
+"
+# Run the query
+metadata_all_summary <- query_exec(query, projectid, use_legacy_sql = FALSE)
+```
+The next portion was not run in a jupyter notebook, but rather Rstudio, as the final output file was now small enough to run on local machine. It was therefore export to Google Cloud Storage in CSV format, downloaded onto my local machine and uploaded in Rstudio
