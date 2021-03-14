@@ -271,6 +271,36 @@ print(t3-t4)
 Imported exported bigquery data into R
 convert to datatable and summarise all fields
 ```{r}
+# clean data from power meter errors and unrealistic numbers
+library(bigrquery)
+projectid <- "algebraic-pier-304102"
+query1 <-
+"
+create or replace table `algebraic-pier-304102.goldencheetah_metadata.all_metadata_clean` as
+-- drop rides that have numbers that out of realm of possibility based on the table found on pg 41 (power profile chart)
+-- max values will come from the men
+-- athlete min age 16
+-- athlete max age 100
+-- weight between 50-150kgs
+SELECT  
+    *
+FROM 
+    `algebraic-pier-304102.goldencheetah_metadata.all_metadata` a
+WHERE
+    a.critical_power_5s/athlete_weight <= 25.18 --and 7.09
+    and a.critical_power_1m/athlete_weight <= 11.5 --and 4.1
+    and a.critical_power_5m/athlete_weight <= 7.6 --and 1.29
+    and a.critical_power_60m/athlete_weight <= 6.6 --and 0.98
+    and a.athlete_weight between 50 and 150
+    and cast(a.yob as numeric) between 1920 and 2004
+"
+# Run the query
+metadata_all_clean <- query_exec(query1, projectid, use_legacy_sql = FALSE)
+
+```
+
+
+```{r}
 library(bigrquery)
 projectid <- "xxx"
 query <-
@@ -327,7 +357,7 @@ SELECT
     
 
 FROM 
-    `algebraic-pier-304102.goldencheetah_metadata.all_metadata` a
+    `algebraic-pier-304102.goldencheetah_metadata.all_metadata_clean` a
 --WHERE
 --   a.id = '{4ed32d19-aeb6-43c1-aa11-7c41a1e935ee}.json' 
 GROUP BY
@@ -338,4 +368,167 @@ GROUP BY
 # Run the query
 metadata_all_summary <- query_exec(query, projectid, use_legacy_sql = FALSE)
 ```
+Now that the data is in a smaller dataframe, it requires further summarisation and feature generation
+```{r}
+setwd('/Users/Andrew/Dropbox/Studies/MSC Big Data Analytics/Dissertation/IT Artefact')
+metadata_all_summary <- read.csv(file = 'metadata_all_summary_2.csv',sep = ",")
+# some of the summarised data lines have null values, these cant be used in the model and therefore need to be removed
+metadata_all_summary[complete.cases(metadata_all_summary),] # omit lines with missing data
+metadata_all_summary <- na.omit(metadata_all_summary) # Remove NA
+# there seem to be some errors with birth dates being greater then the current year, therefore only athletes over the age of 16 will be included. This data is up to date to 2020, therefore birth dates > than 2020-16 will be omitted, people older than 100 will be omitted. 
+# male will be converted to and female = 0
+# drop athletes that have less than 30 rides where dropped, as this would roughly give one month of data per athlete that is included
+# drop athletes that dont have a max critical power number for 60m as this is required to test against FTP
+# create calculated eftp from best 20min x 95%
+# remove all fields that are to do with watts per kg as these are calculated off the the max critical values/weight, they would therefore be highly correlated
+library(sqldf)
+metadata_all_summary <- sqldf(
+                              "
+                              Select
+                                    ID,
+                                    case when gender = 'M' then 1 else 0 end as gender,
+                                    2020-yob as age,
+                                    max_critical_power_60m*0.95 as eFTP,
+                                    --no_of_rides,
+                                    --avg_workout_time,
+                                    --avg_time_riding,
+                                    avg_weight,
+                                    avg_power_all_rides,
+                                    --avg_nonzero_power_all_rides,
+                                    --max_power,
+                                    --best_cp_setting,
+                                    avg_coggan_np,
+                                    --avg_coggan_variability_index,
+                                    max_critical_power_1s,	
+                                    max_critical_power_5s,
+                                    max_critical_power_10s,
+                                    max_critical_power_15s,	
+                                    max_critical_power_20s,
+                                    max_critical_power_30s,	
+                                    max_critical_power_1m,
+                                    max_critical_power_2m,
+                                    max_critical_power_3m,
+                                    max_critical_power_5m,
+                                    max_critical_power_8m,
+                                    max_critical_power_10m,
+                                    max_critical_power_20m,
+                                    max_critical_power_30m,
+                                    max_critical_power_60m,
+                                    avg_time_in_zone_L1/(avg_time_in_zone_L1+avg_time_in_zone_L2+
+                                                         avg_time_in_zone_L3+avg_time_in_zone_L4+
+                                                         avg_time_in_zone_L5+avg_time_in_zone_L6+
+                                                         avg_time_in_zone_L7) as perc_zone1,
+                                    avg_time_in_zone_L2/(avg_time_in_zone_L1+avg_time_in_zone_L2+
+                                                         avg_time_in_zone_L3+avg_time_in_zone_L4+
+                                                         avg_time_in_zone_L5+avg_time_in_zone_L6+
+                                                         avg_time_in_zone_L7) as perc_zone2,
+                                    avg_time_in_zone_L3/(avg_time_in_zone_L1+avg_time_in_zone_L2+
+                                                         avg_time_in_zone_L3+avg_time_in_zone_L4+
+                                                         avg_time_in_zone_L5+avg_time_in_zone_L6+
+                                                         avg_time_in_zone_L7) as perc_zone3,
+                                    avg_time_in_zone_L4/(avg_time_in_zone_L1+avg_time_in_zone_L2+
+                                                         avg_time_in_zone_L3+avg_time_in_zone_L4+
+                                                         avg_time_in_zone_L5+avg_time_in_zone_L6+
+                                                         avg_time_in_zone_L7) as perc_zone4,
+                                    avg_time_in_zone_L5/(avg_time_in_zone_L1+avg_time_in_zone_L2+
+                                                         avg_time_in_zone_L3+avg_time_in_zone_L4+
+                                                         avg_time_in_zone_L5+avg_time_in_zone_L6+
+                                                         avg_time_in_zone_L7) as perc_zone5,
+                                    avg_time_in_zone_L6/(avg_time_in_zone_L1+avg_time_in_zone_L2+
+                                                         avg_time_in_zone_L3+avg_time_in_zone_L4+
+                                                         avg_time_in_zone_L5+avg_time_in_zone_L6+
+                                                         avg_time_in_zone_L7) as perc_zone6,
+                                    avg_time_in_zone_L7/(avg_time_in_zone_L1+avg_time_in_zone_L2+
+                                                         avg_time_in_zone_L3+avg_time_in_zone_L4+
+                                                         avg_time_in_zone_L5+avg_time_in_zone_L6+
+                                                         avg_time_in_zone_L7) as perc_zone7
+                              From
+                                    metadata_all_summary 
+                              Where
+                                    no_of_rides >= 30
+                                    and max_critical_power_60m > 50*0.98
+                                    -- we used 50w*0.98 due to the lowest value on the power profile (pg 41) for woman being w/p/kg at 0.98w, and we chose to only include riders above 50kg's for this analysis
+                              "
+                              )
+# Next is variable reduction, this is the most important part
+library(data.table)
+metadata_all_summary <-  as.data.table(metadata_all_summary)
+metadata_all_summary <- setkey(metadata_all_summary,id)
+str(metadata_all_summary)
+# drop eFTP to small
+# drop eFTP to high
+library("ggplot2")
+# Compute a histogram of `metadata_all_summary$eFTP` to understand distribution
+# from the distribution delete figures that seem to low and ones that seem to high
+qplot(metadata_all_summary$eFTP, geom="histogram") 
+qplot(metadata_all_summary$eFTP,
+      geom="histogram",
+      binwidth = 25,  
+      main = "Histogram for eFTP", 
+      xlab = "eFTP",  
+      fill=I("blue"), 
+      col=I("red"), 
+      alpha=I(.2),
+      xlim=c(0,1000))
+
+
+```
+Remove athletes the eFTP > 6.7w per kg
+
+```{r}
+qplot(metadata_all_summary$eFTP,
+      geom="histogram",
+      binwidth = 50,  
+      main = "Histogram for eFTP", 
+      xlab = "eFTP",  
+      fill=I("blue"), 
+      col=I("red"), 
+      alpha=I(.2),
+      xlim=c(0,600))
+
+summary(metadata_all_summary)
+# after reviewing this it gives a far more realistic view of the athletes what we would like to study
+# check if there are any NA's
+sum(is.na(metadata_all_summary))
+# there are 70, lets check what the data looks like
+meta_data_na <- metadata_all_summary[rowSums(is.na(metadata_all_summary)) > 0, ]
+# these athletes have too much missing data and therefore will be dropped. There are only 10 of them
+metadata_all_summary <- metadata_all_summary[complete.cases(metadata_all_summary), ]
+
+```
+
 The next portion was not run in a jupyter notebook, but rather Rstudio, as the final output file was now small enough to run on local machine. It was therefore export to Google Cloud Storage in CSV format, downloaded onto my local machine and uploaded in Rstudio
+```{r}
+install.packages("fpc")
+install.packages("dbscan")
+install.packages("factoextra")
+
+# Compute DBSCAN using fpc package
+library("fpc")
+set.seed(123)
+dbscan <- fpc::dbscan(metadata_all_summary, eps = 0.15, MinPts = 5)
+
+```
+Example area
+```{r}
+summary(metadata_all_summary)
+
+
+```
+looking for outliers
+
+```{r}
+# remove all 20min 
+metadata_all_summary <-
+  sqldf(
+      "
+      Select
+            *
+      From
+            metadata_all_summary 
+      wherea
+            max_critical_power_20m /avg_weight < 6.71/0.95
+      "
+      )
+```
+
