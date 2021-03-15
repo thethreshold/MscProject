@@ -491,44 +491,129 @@ summary(metadata_all_summary)
 # check if there are any NA's
 sum(is.na(metadata_all_summary))
 # there are 70, lets check what the data looks like
-meta_data_na <- metadata_all_summary[rowSums(is.na(metadata_all_summary)) > 0, ]
+metadata_na <- metadata_all_summary[rowSums(is.na(metadata_all_summary)) > 0, ]
 # these athletes have too much missing data and therefore will be dropped. There are only 10 of them
 metadata_all_summary <- metadata_all_summary[complete.cases(metadata_all_summary), ]
-
+# convert all to numeric
+str(metadata_all_summary)
+metadata_all_summary$age <- as.numeric(metadata_all_summary$age)
+metadata_all_summary$gender <- as.numeric(metadata_all_summary$gender)
+str(metadata_all_summary[ , c(2:29)])
 ```
 
 The next portion was not run in a jupyter notebook, but rather Rstudio, as the final output file was now small enough to run on local machine. It was therefore export to Google Cloud Storage in CSV format, downloaded onto my local machine and uploaded in Rstudio
 ```{r}
+# https://www.youtube.com/watch?v=m9pcY6iqIZY
 install.packages("fpc")
 install.packages("dbscan")
 install.packages("factoextra")
 
+library(dbscan)
+# visualize distribution of data
+kNNdistplot(metadata_all_summary[ , c(9:22)], k = 5)
 # Compute DBSCAN using fpc package
 library("fpc")
 set.seed(123)
-dbscan <- fpc::dbscan(metadata_all_summary, eps = 0.15, MinPts = 5)
+dbscan <- fpc::dbscan(metadata_all_summary[ , c(9:22)], eps = 350, MinPts = 30)
 
+# Plot DBSCAN results
+library("factoextra")
+fviz_cluster(dbscan, data = metadata_all_summary[ , c(9:22)], stand = FALSE,
+             ellipse = FALSE, show.clust.cent = FALSE,
+             geom = "point",palette = "jco", ggtheme = theme_classic())
+
+print(dbscan)
 ```
 Example area
 ```{r}
-summary(metadata_all_summary)
-
+metadata_summary_test <-
+  sqldf("select 
+                *,
+                max_critical_power_60m/max_critical_power_20m as actual_ftp_perc
+  
+        from metadata_all_summary
+        ")
+qplot(metadata_summary_test$actual_ftp_perc,
+      geom="histogram",
+      binwidth = 0.01,  
+      main = "Histogram for actual_FTP_perc relative to best max 20min number", 
+      xlab = "actual_ftp_perc",  
+      fill=I("blue"), 
+      col=I("red"), 
+      alpha=I(.2),
+      xlim=c(0.5,1))
 
 ```
 looking for outliers
 
 ```{r}
-# remove all 20min 
-metadata_all_summary <-
-  sqldf(
-      "
-      Select
-            *
-      From
-            metadata_all_summary 
-      wherea
-            max_critical_power_20m /avg_weight < 6.71/0.95
-      "
-      )
+# buckets need to be created from this bucket to make it easier for a model to classify
+# 1st iteration create buckets of 2%
+# https://www.jdatalab.com/data_science_and_data_mining/2017/01/30/data-binning-plot.html
+
+buckets <- as.data.frame(metadata_summary_test$actual_ftp_perc)
+names(buckets)[names(buckets) == 'metadata_summary_test$actual_ftp_perc'] <- 'actual_ftp_perc'
+ggplot(data = metadata_summary_test, mapping = aes(x=actual_ftp_perc)) + 
+  geom_histogram(aes(y=..density..),fill="bisque",color="white",alpha=0.7) + 
+  geom_density() +
+  geom_rug() +
+  labs(x='actual_ftp_perc') +
+  theme_minimal()
+
+# set up cut-off values 
+breaks <- c(0,
+            0.75,
+            0.775,
+            0.8,
+            0.825,
+            0.85,
+            0.875,
+            0.9,
+            0.925,
+            0.95,
+            0.975,
+            1)
+# specify interval/bin labels
+tags <- c("[0-0.75)",
+          "[0.75-0.775)",
+          "[0.775-0.8)",
+          "[0.8-0.825)",
+          "[0.825-0.85)",
+          "[0.85-0.875)",
+          "[0.875-0.9)", 
+          "[0.9-0.925)",
+          "[0.925-0.95)",
+          "[0.95-0.975)",
+          "[0.975-1)")
+# bucketing values into bins
+group_tags <- cut(buckets$actual_ftp_perc, 
+                               breaks=breaks, 
+                               include.lowest=TRUE, 
+                               right=FALSE, 
+                               labels=tags)
+# inspect bins
+summary(group_tags)
+
+buckets$bin <- cut(buckets$actual_ftp_perc, 
+                               breaks=breaks, 
+                               include.lowest=TRUE, 
+                               right=FALSE, 
+                               labels=tags)
+
+actual_ftp_perc_groups <- factor(group_tags, 
+                                levels = labels,
+                                ordered = TRUE)
+install.packages('tidyverse')
+library(tidyverse)
+ggplot(data = as_tibble(group_tags),
+       mapping = aes(x=value)) + 
+       geom_bar(fill="bisque",color="white",alpha=0.7) + 
+       stat_count(geom="text", aes(label=sprintf("%.4f",..count../length(group_tags))), vjust=-0.5) +
+       labs(x='actual_ftp_perc') +
+       theme(text = element_text(size=12),
+       axis.text.x = element_text(angle=90, hjust=1))
+ 
+
+
 ```
 
