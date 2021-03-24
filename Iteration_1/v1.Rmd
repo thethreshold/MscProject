@@ -502,6 +502,8 @@ str(metadata_all_summary[ , c(2:29)])
 ```
 
 The next portion was not run in a jupyter notebook, but rather Rstudio, as the final output file was now small enough to run on local machine. It was therefore export to Google Cloud Storage in CSV format, downloaded onto my local machine and uploaded in Rstudio
+
+Testing to see if DBscan will work, but unfortunately it didnt
 ```{r}
 # https://www.youtube.com/watch?v=m9pcY6iqIZY
 install.packages("fpc")
@@ -594,26 +596,274 @@ group_tags <- cut(buckets$actual_ftp_perc,
 # inspect bins
 summary(group_tags)
 
-buckets$bin <- cut(buckets$actual_ftp_perc, 
+buckets$actual_ftp_bin <- cut(buckets$actual_ftp_perc, 
                                breaks=breaks, 
                                include.lowest=TRUE, 
                                right=FALSE, 
                                labels=tags)
 
-actual_ftp_perc_groups <- factor(group_tags, 
-                                levels = labels,
-                                ordered = TRUE)
-install.packages('tidyverse')
-library(tidyverse)
-ggplot(data = as_tibble(group_tags),
-       mapping = aes(x=value)) + 
-       geom_bar(fill="bisque",color="white",alpha=0.7) + 
-       stat_count(geom="text", aes(label=sprintf("%.4f",..count../length(group_tags))), vjust=-0.5) +
-       labs(x='actual_ftp_perc') +
-       theme(text = element_text(size=12),
-       axis.text.x = element_text(angle=90, hjust=1))
+metadata_all_summary <- cbind(metadata_all_summary,buckets)
+
+colNames <- names(metadata_all_summary[ , c(2:29)])
+for(i in colNames){
+  plt <- ggplot(data=metadata_all_summary, aes_string(x=i)) +
+  geom_histogram(aes(y =..density..), fill = "orange") +
+  geom_density()
+  print(plt)
+  Sys.sleep(2)
+}
+#install.packages('tidyverse')
+#library(tidyverse)
+#ggplot(data = as_tibble(group_tags),
+#       mapping = aes(x=value)) + 
+#       geom_bar(fill="bisque",color="white",alpha=0.7) + 
+#       stat_count(geom="text", aes(label=sprintf("%.4f",..count../length(group_tags))), vjust=-0.5) +
+#       labs(x='actual_ftp_perc') +
+#       theme(text = element_text(size=12),
+#       axis.text.x = element_text(angle=90, hjust=1))
  
 
+```
+```{r}
+#https://www.r-bloggers.com/2020/05/step-by-step-guide-on-how-to-build-linear-regression-in-r-with-code/
+
+# create linear regression dataset
+# need to exclude 
+lr_data <- subset(metadata_all_summary, select = -c(id,eFTP,actual_ftp_perc,actual_ftp_bin,max_critical_power_1s))
+# check the distribution of the target variable
+library(ggplot2)
+# Building histogram to test each variable to see if it follows a normal distribution
+ggplot(data=lr_data, aes(lr_data$max_critical_power_60m)) +
+  geom_histogram(aes(y =..density..), fill = "orange") +
+  geom_density()
+# target variable follows a normal distribution
 
 ```
+```{r}
+# descriptive statistics of all variables being used in LR
+install.packages('psych')
+library(psych)
+psych::describe(lr_data)
+
+```
+```{r}
+# checking for outliers
+# need to do more research on how to remove outliers based on a formula and move this up to a section closer to the top, in the data summary
+# Next step is to check for correlation
+install.packages("corrplot")
+require(corrplot)
+correlation <- cor(lr_data) 
+correlation <- round(correlation,2)
+# In theory, the correlation between the independent variables should be zero. In practice, we expect and are okay with weak to no correlation between independent variables.
+# however we expect there to be correlation between all power variables
+# split the data
+
+install.packages('caret')
+library(caret)
+# Split data into train and test
+index <- createDataPartition(lr_data$max_critical_power_60m, p = .70, list = FALSE)
+train <- lr_data[index, ]
+test <- lr_data[-index, ]
+# Checking the dim of train
+dim(train)
+
+# building the model
+# Taining model
+lmModel <- lm(max_critical_power_60m ~ . , data = train)
+# Printing the model object
+print(lmModel)
+```
+```{r}
+# Checking model statistics
+summary(lmModel)
+# Using AIC function
+AIC(lmModel)
+# Using BIC function
+BIC(lmModel)  
+
+# 1st iteration
+# AIC [1] 19937.58
+# BIC [1] 20088.33
+```
+running model with significant variables only
+```{r}
+lr_data_sig <- subset(lr_data, select = c(avg_weight,
+                                          avg_power_all_rides,
+                                          avg_coggan_np,
+                                          max_critical_power_5s,
+                                          max_critical_power_10s,
+                                          max_critical_power_30m,
+                                          perc_zone1,
+                                          perc_zone3,
+                                          max_critical_power_60m))
+# Split data into train and test
+index <- createDataPartition(lr_data_sig$max_critical_power_60m, p = .70, list = FALSE)
+train_1 <- lr_data_sig[index, ]
+test_1 <- lr_data_sig[-index, ]
+# Checking the dim of train
+dim(train_1)
+
+# building the model
+# Training model
+lmModel_1 <- lm(max_critical_power_60m ~ . , data = train_1)
+# Printing the model object
+print(lmModel_1)
+# Checking model statistics
+summary(lmModel_1)
+```
+
+
+testing fit of the model
+```{r}
+# Using AIC function
+AIC(lmModel_1)
+# Using BIC function
+BIC(lmModel_1)  
+
+# 2nd iteration
+# AIC [1] 19892.34
+# BIC [1] 19950.32
+```
+```{r}
+names(lmModel_1)
+#The above vector presents the names of the object that constitute the model object. Here, fitted values are the predicted values. Now, we will use these values to generate the rmse values.(reword straight from the text)
+```
+```{r}
+install.packages("Metrics")
+library(Metrics)
+rmse(actual = train_1$max_critical_power_60m, predicted = lmModel_1$fitted.values)
+```
+```{r}
+# confirm assumptions of a linear regression
+#1. Errors should follow normal distribution – This can be checked by drawing a histogram of residuals or by using plot() function. The plot function creates 4 different charts. One of which is an NPP plot. The chart confirms if the errors follow a normal distribution or not.
+
+# Histogram to check the distribution of errors
+hist(lmModel_1$residuals, 
+     color = "grey",
+     breaks = 50)
+```
+```{r}
+# We except the points to be very close to the dotted line in an NPP plot. Points being close to the line means that errors follow a normal distribution.
+plot(lmModel_1)
+# see 2nd diagram for NPP plot if the dots follow the line then its show normal distribution
+
+# 2. There should be no heteroscedasticity – This means that the variance of error terms should be constant. We shall not see any patterns when we draw a plot between residuals and fitted values. A straight red line closer to the zero value represents that we do not have heteroscedasticity problem in our data. #see first diagram heteroscedasticity
+```
+3. There should be no multicollinearity – The linear model assumes that the predictor variables do not correlate with each other. If they exhibit high correlation, it is a problem and is called multicollinearity. A variation inflation factor test can help check for the multicollinearity assumption.
+
+VIF = 1/(1-R2)
+
+The R implementation of the below function can be found here.
+
+VIF is an iterative process. The function will remove one variable at a time, which is cause for multicollinearity and repeats the process until all problem causing variables are removed. So, finally, we are left with the list of variables that have no or very weak correlation between them.
+
+```{r}
+# 3. There should be no multicollinearity – The linear model assumes that the predictor variables do not correlate with each other. If they exhibit high correlation, it is a problem and is called multicollinearity. A variation inflation factor test can help check for the multicollinearity assumption.
+
+# VIF = 1/(1-R2)
+
+# The R implementation of the below function can be found here.
+
+# VIF is an iterative process. The function will remove one variable at a time, which is cause for multicollinearity and repeats the process until all problem causing variables are removed. So, finally, we are left with the list of variables that have no or very weak correlation between them.
+
+# https://gist.github.com/fawda123/4717702
+install.packages("fmsb")
+
+vif_func<-function(in_frame,thresh=10,trace=T,...){
+
+  library(fmsb)
+  
+  if(any(!'data.frame' %in% class(in_frame))) in_frame<-data.frame(in_frame)
+  
+  #get initial vif value for all comparisons of variables
+  vif_init<-NULL
+  var_names <- names(in_frame)
+  for(val in var_names){
+      regressors <- var_names[-which(var_names == val)]
+      form <- paste(regressors, collapse = '+')
+      form_in <- formula(paste(val, '~', form))
+      vif_init<-rbind(vif_init, c(val, VIF(lm(form_in, data = in_frame, ...))))
+      }
+  vif_max<-max(as.numeric(vif_init[,2]), na.rm = TRUE)
+
+  if(vif_max < thresh){
+    if(trace==T){ #print output of each iteration
+        prmatrix(vif_init,collab=c('var','vif'),rowlab=rep('',nrow(vif_init)),quote=F)
+        cat('\n')
+        cat(paste('All variables have VIF < ', thresh,', max VIF ',round(vif_max,2), sep=''),'\n\n')
+        }
+    return(var_names)
+    }
+  else{
+
+    in_dat<-in_frame
+
+    #backwards selection of explanatory variables, stops when all VIF values are below 'thresh'
+    while(vif_max >= thresh){
+      
+      vif_vals<-NULL
+      var_names <- names(in_dat)
+        
+      for(val in var_names){
+        regressors <- var_names[-which(var_names == val)]
+        form <- paste(regressors, collapse = '+')
+        form_in <- formula(paste(val, '~', form))
+        vif_add<-VIF(lm(form_in, data = in_dat, ...))
+        vif_vals<-rbind(vif_vals,c(val,vif_add))
+        }
+      max_row<-which(vif_vals[,2] == max(as.numeric(vif_vals[,2]), na.rm = TRUE))[1]
+
+      vif_max<-as.numeric(vif_vals[max_row,2])
+
+      if(vif_max<thresh) break
+      
+      if(trace==T){ #print output of each iteration
+        prmatrix(vif_vals,collab=c('var','vif'),rowlab=rep('',nrow(vif_vals)),quote=F)
+        cat('\n')
+        cat('removed: ',vif_vals[max_row,1],vif_max,'\n\n')
+        flush.console()
+        }
+
+      in_dat<-in_dat[,!names(in_dat) %in% vif_vals[max_row,1]]
+
+      }
+
+    return(names(in_dat))
+    
+    }
+  
+}
+# create dataset for vif test
+# need to exclude 
+lr_data_vif <- subset(lr_data_sig, select = -c(max_critical_power_60m))
+vif_func(lr_data_sig[,1:8])
+
+# based on VIF results it makes sense to remove either avg_power_all_rides or avg_coggan_np
+
+# https://blog.minitab.com/en/understanding-statistics/handling-multicollinearity-in-regression-analysis#:~:text=A%20VIF%20between%205%20and,poorly%20estimated%20due%20to%20multicollinearity.
+```
+3. There should be no auto serial correlation – The autocorrelation means that error terms should not be correlated with each other. To check this, we can run the Durbin-Watson test(dw test). The test returns a value between 0 and 4. If the value is two, we say there is no auto serial correlation. However, a value higher than 2 represents (-) ve correlation and value lower than 2 represents (+) ve correlation.
+
+```{r}
+install.packages("lmtest")
+library("lmtest")
+dwtest(lmModel_1)
+#	Durbin-Watson test
+
+# data:  lmModel_1
+# DW = 1.9113, p-value = 0.01419
+# alternative hypothesis: true autocorrelation is greater than 0
+# Durbin-Watson’s d tests the null hypothesis that the residuals are not linearly auto-correlated.  While d can assume values between 0 and 4, values around 2 indicate no autocorrelation.  As a rule of thumb values of 1.5 < d < 2.5 show that there is no auto-correlation in the data.
+```
+Now its time to test the test set to validate the accuracy.
+
+Predicting Dependent Variable(Y) in Test Dataset
+We test the model performance on test data set to ensure that our model is stable, and we get the same or closer enough results to use this trained model to predict and forecast future values of dependent variables. To predict, we use predict function, and then we generate R-Squared value to see if we get the same result as we got in the training dataset or not.
+
+```{r}
+
+# Predicting 60min max in test dataset
+test_1$predicted_max_critical_power_60m <- predict(lmModel_1, test_1)
+```
+
 
