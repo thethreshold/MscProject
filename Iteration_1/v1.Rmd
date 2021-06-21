@@ -734,6 +734,21 @@ library(Metrics)
 rmse(actual = train_1$max_critical_power_60m, predicted = lmModel_1$fitted.values)
 ```
 ```{r}
+# Nwanganga
+# residual diagnostics
+# 1. determin mean of zero
+mean(lmModel_1$residuals)
+# 1.209694e-15 is extremely close to zero therefore satisfying this condition
+
+# 2. Normality of residuals
+install.packages("olsrr")
+library(olsrr)
+ols_plot_resid_hist(lmModel_1)
+ols_plot_resid_fit(lmModel_1)
+```
+
+
+```{r}
 # confirm assumptions of a linear regression
 #1. Errors should follow normal distribution – This can be checked by drawing a histogram of residuals or by using plot() function. The plot function creates 4 different charts. One of which is an NPP plot. The chart confirms if the errors follow a normal distribution or not.
 
@@ -864,6 +879,12 @@ We test the model performance on test data set to ensure that our model is stabl
 
 # Predicting 60min max in test dataset
 test_1$predicted_max_critical_power_60m <- predict(lmModel_1, test_1)
+actual <- test_1$max_critical_power_60m
+preds <- test_1$predicted_max_critical_power_60m
+rss <- sum((preds - actual) ^ 2)
+tss <- sum((actual - mean(actual)) ^ 2)
+rsq <- 1 - rss/tss
+rsq
 ```
 
 
