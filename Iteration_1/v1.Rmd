@@ -876,7 +876,12 @@ Predicting Dependent Variable(Y) in Test Dataset
 We test the model performance on test data set to ensure that our model is stable, and we get the same or closer enough results to use this trained model to predict and forecast future values of dependent variables. To predict, we use predict function, and then we generate R-Squared value to see if we get the same result as we got in the training dataset or not.
 
 ```{r}
+# Predicting Price in test dataset
+test_1$predicted_max_critical_power_60m <- predict(lmModel_1, test_1)
+# Priting top 6 rows of actual and predited price
+head(test_1[ , c("max_critical_power_60m", "predicted_max_critical_power_60m")])
 
+# Generating r^2 of test dataset
 # Predicting 60min max in test dataset
 test_1$predicted_max_critical_power_60m <- predict(lmModel_1, test_1)
 actual <- test_1$max_critical_power_60m
@@ -885,6 +890,14 @@ rss <- sum((preds - actual) ^ 2)
 tss <- sum((actual - mean(actual)) ^ 2)
 rsq <- 1 - rss/tss
 rsq
+```
+The final step would be to add the eFTP value to the test_1 data to compare the FTP, predicted FTP and eFTP
+```{r}
+final_test <- cbind(test_1, test$max_critical_power_20m, test$max_critical_power_20m*0.95)
+library(dplyr)
+final_test <- rename(final_test, max_critical_power_20m = V2)
+final_test <- rename(final_test, eFTP = V3)
+str(final_test$V2)
 ```
 
 
