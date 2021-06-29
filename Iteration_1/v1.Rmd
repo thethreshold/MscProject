@@ -6,7 +6,7 @@ output: html_notebook
 Download the data
 ```{r}
 # final edit
-# download all metadata json files into google cloud storage bucket
+# download all metadata json files into Google Cloud Storage Bucket
 library("plyr")
 library("dplyr")
 library("aws.s3")
@@ -39,15 +39,13 @@ t2 <- Sys.time()
 print('Time to download and extract all files')
 print(t2-t1)
 ```
-
-Parse all the files into a bigquery table
-
+Parse all the files into a BigQuery table
 ```{r}
 require(jsonlite)
 require(data.table)
 require(foreach)
 require(doParallel)
-# Get data into a single list
+# get data into a single list
 
 setwd("/home/jupyter/goldencheetah_data_unzipp/")
 filenames <- list.files(path = "/home/jupyter/goldencheetah_data_unzipp/")
@@ -87,21 +85,21 @@ print(t3 - t2)
 
 
 
-# Merge into a data.table
+# merge into a data.table
 dt_merged <- rbindlist(dt_merged, fill = TRUE)
 #head(dt_merged)
 
-# Reorder columns such that "id", "date", "sport", "yob" and "gender" are the first columns
+# reorder columns such that "id", "date", "sport", "yob" and "gender" are the first columns
 idx_metadata_cols <- which(colnames(dt_merged) %in% c("date","id","sport","yob","gender"))
 idx_metric_cols <- which(!colnames(dt_merged) %in% c("date","id","sport","yob","gender"))
 dt_merged <- dt_merged[,c(idx_metadata_cols,idx_metric_cols), with=FALSE]
 
-#set all NA to 0 that are not in a list
-#dt_merged[is.na(dt_merged)] <- 0
-#dt_merged[is.null(dt_merged)] <- 0
+# set all NA to 0 that are not in a list
+# dt_merged[is.na(dt_merged)] <- 0
+# dt_merged[is.null(dt_merged)] <- 0
 
 idx_list <- which(sapply(dt_merged, class) == "list")
-#idx_list
+# idx_list
 
 # select only columns required
 dt_merged <- dt_merged[,c('date','id','sport','gender','yob','ride_count','workout_time','time_riding','athlete_weight','total_work','average_power','nonzero_power',
@@ -172,7 +170,7 @@ dt_merged$time_in_zone_L7[zero_idx] <- 0
 dt_merged$time_in_zone_L7 <- as.numeric(unlist(lapply(dt_merged$time_in_zone_L7, `[[`, 1)))
 
 # change column types
-#dt_merged$date <- as.POSIXct(dt_merged$date, "%Y-%m-%d %H:%M:%S")
+# dt_merged$date <- as.POSIXct(dt_merged$date, "%Y-%m-%d %H:%M:%S")
 dt_merged$ride_count <- as.numeric(dt_merged$ride_count)
 dt_merged$workout_time <- as.numeric(dt_merged$workout_time)
 dt_merged$time_riding <- as.numeric(dt_merged$time_riding)
@@ -215,7 +213,7 @@ dt_merged$'10m_peak_wpk' <- as.numeric(dt_merged$'10m_peak_wpk')
 dt_merged$'20m_peak_wpk' <- as.numeric(dt_merged$'20m_peak_wpk')
 dt_merged$'30m_peak_wpk' <- as.numeric(dt_merged$'30m_peak_wpk')
 dt_merged$'60m_peak_wpk' <- as.numeric(dt_merged$'60m_peak_wpk')
-#class(dt_merged$coggan_tssperhour)
+# class(dt_merged$coggan_tssperhour)
 # rename columns that start with a number for BigQuery upload
 setnames(dt_merged, old=c('1s_critical_power'), new=c('critical_power_1s'))
 setnames(dt_merged, old=c('5s_critical_power'), new=c('critical_power_5s'))
@@ -247,7 +245,7 @@ setnames(dt_merged, old=c('60m_peak_wpk'), new=c('peak_wpk_60m'))
 
 dt_merged$id <- unlist(dt_merged$id)
 
-#idx_list <- which(sapply(dt_merged, class)=="list") # this is empty, implying no more list types
+# idx_list <- which(sapply(dt_merged, class)=="list") # this is empty, implying no more list types
 
 t4 <- Sys.time()
 paste0('Time to subset list elements, convert data types')
@@ -255,28 +253,28 @@ print(t4-t3)
   
 
     
-#write to bigquery
+# write to bigquery
 t3 <- Sys.time()
 library(bigQueryR)
 # use this to upload data to bigquery table
 bqr_auth()
 bqr_upload_data(projectId = "xxx", 
                 datasetId = "goldencheetah_metadata",#name of gcp projectid
-                tableId = "all_metadata_4001_6605", #name of the table 
+                tableId = "all_metadata", #name of the table 
                 upload_data = dt_merged) #where the data is coming from
 t4 <- Sys.time()
 paste0('Uploaded to BigQuery')
 print(t3-t4)
 ```
-Imported exported bigquery data into R
-convert to datatable and summarise all fields
+Imported exported BigQuery data into R
+Convert to datatable and summarise all fields
 ```{r}
 # clean data from power meter errors and unrealistic numbers
 library(bigrquery)
-projectid <- "algebraic-pier-304102"
+projectid <- "xxx"
 query1 <-
 "
-create or replace table `algebraic-pier-304102.goldencheetah_metadata.all_metadata_clean` as
+create or replace table `xxxx.goldencheetah_metadata.all_metadata_clean` as
 -- drop rides that have numbers that out of realm of possibility based on the table found on pg 41 (power profile chart)
 -- max values will come from the men
 -- athlete min age 16
@@ -294,12 +292,10 @@ WHERE
     and a.athlete_weight between 50 and 150
     and cast(a.yob as numeric) between 1920 and 2004
 "
-# Run the query
+# run the query
 metadata_all_clean <- query_exec(query1, projectid, use_legacy_sql = FALSE)
-
 ```
-
-
+Write all_metadata_summary table to BigQuery
 ```{r}
 library(bigrquery)
 projectid <- "xxx"
@@ -365,18 +361,18 @@ GROUP BY
    a.yob,
    a.gender
 "
-# Run the query
+# run the query
 metadata_all_summary <- query_exec(query, projectid, use_legacy_sql = FALSE)
 ```
-Now that the data is in a smaller dataframe, it requires further summarisation and feature generation
+Now that the data is in a smaller dataframe, it requires further summarisation and feature generation. This can be run on local machine. For the scope of this project I exported the file from the Google AI Notebook and imported it into my local machine.
 ```{r}
 setwd('/Users/Andrew/Dropbox/Studies/MSC Big Data Analytics/Dissertation/IT Artefact')
 metadata_all_summary <- read.csv(file = 'metadata_all_summary_2.csv',sep = ",")
 # some of the summarised data lines have null values, these cant be used in the model and therefore need to be removed
 metadata_all_summary[complete.cases(metadata_all_summary),] # omit lines with missing data
-metadata_all_summary <- na.omit(metadata_all_summary) # Remove NA
+metadata_all_summary <- na.omit(metadata_all_summary) # remove NA
 # there seem to be some errors with birth dates being greater then the current year, therefore only athletes over the age of 16 will be included. This data is up to date to 2020, therefore birth dates > than 2020-16 will be omitted, people older than 100 will be omitted. 
-# male will be converted to and female = 0
+# male will be converted to 1 and female = 0
 # drop athletes that have less than 30 rides where dropped, as this would roughly give one month of data per athlete that is included
 # drop athletes that dont have a max critical power number for 60m as this is required to test against FTP
 # create calculated eftp from best 20min x 95%
@@ -450,7 +446,7 @@ metadata_all_summary <- sqldf(
                                     -- we used 50w*0.98 due to the lowest value on the power profile (pg 41) for woman being w/p/kg at 0.98w, and we chose to only include riders above 50kg's for this analysis
                               "
                               )
-# Next is variable reduction, this is the most important part
+# next is variable reduction, this is the most important part
 library(data.table)
 metadata_all_summary <-  as.data.table(metadata_all_summary)
 metadata_all_summary <- setkey(metadata_all_summary,id)
@@ -458,7 +454,7 @@ str(metadata_all_summary)
 # drop eFTP to small
 # drop eFTP to high
 library("ggplot2")
-# Compute a histogram of `metadata_all_summary$eFTP` to understand distribution
+# compute a histogram of `metadata_all_summary$eFTP` to understand distribution
 # from the distribution delete figures that seem to low and ones that seem to high
 qplot(metadata_all_summary$eFTP, geom="histogram") 
 qplot(metadata_all_summary$eFTP,
@@ -473,8 +469,7 @@ qplot(metadata_all_summary$eFTP,
 
 
 ```
-Remove athletes the eFTP > 6.7w per kg
-
+Some more checking and data cleaning
 ```{r}
 qplot(metadata_all_summary$eFTP,
       geom="histogram",
@@ -500,33 +495,7 @@ metadata_all_summary$age <- as.numeric(metadata_all_summary$age)
 metadata_all_summary$gender <- as.numeric(metadata_all_summary$gender)
 str(metadata_all_summary[ , c(2:29)])
 ```
-
-The next portion was not run in a jupyter notebook, but rather Rstudio, as the final output file was now small enough to run on local machine. It was therefore export to Google Cloud Storage in CSV format, downloaded onto my local machine and uploaded in Rstudio
-
-Testing to see if DBscan will work, but unfortunately it didnt
-```{r}
-# https://www.youtube.com/watch?v=m9pcY6iqIZY
-install.packages("fpc")
-install.packages("dbscan")
-install.packages("factoextra")
-
-library(dbscan)
-# visualize distribution of data
-kNNdistplot(metadata_all_summary[ , c(9:22)], k = 5)
-# Compute DBSCAN using fpc package
-library("fpc")
-set.seed(123)
-dbscan <- fpc::dbscan(metadata_all_summary[ , c(9:22)], eps = 350, MinPts = 30)
-
-# Plot DBSCAN results
-library("factoextra")
-fviz_cluster(dbscan, data = metadata_all_summary[ , c(9:22)], stand = FALSE,
-             ellipse = FALSE, show.clust.cent = FALSE,
-             geom = "point",palette = "jco", ggtheme = theme_classic())
-
-print(dbscan)
-```
-Example area
+Creating a histogram of % of FTP witnessed versus best 20min max effort
 ```{r}
 metadata_summary_test <-
   sqldf("select 
@@ -535,10 +504,11 @@ metadata_summary_test <-
   
         from metadata_all_summary
         ")
+library("ggplot2")
 qplot(metadata_summary_test$actual_ftp_perc,
       geom="histogram",
       binwidth = 0.01,  
-      main = "Histogram for actual_FTP_perc relative to best max 20min number", 
+      main = "Histogram for actual_FTP_perc relative to best max 20-minute number", 
       xlab = "actual_ftp_perc",  
       fill=I("blue"), 
       col=I("red"), 
@@ -546,9 +516,10 @@ qplot(metadata_summary_test$actual_ftp_perc,
       xlim=c(0.5,1))
 
 ```
-looking for outliers
-
+Creating classification buckets (this was not used)
+Looking for outliers with the use of histograms
 ```{r}
+# this was never used to as a model as a classification model was not used, but rather a linear regression. The buckets where created to allow for a classification model if a classification model was to be used.
 # buckets need to be created from this bucket to make it easier for a model to classify
 # 1st iteration create buckets of 2%
 # https://www.jdatalab.com/data_science_and_data_mining/2017/01/30/data-binning-plot.html
@@ -604,6 +575,7 @@ buckets$actual_ftp_bin <- cut(buckets$actual_ftp_perc,
 
 metadata_all_summary <- cbind(metadata_all_summary,buckets)
 
+# checking for outliers
 colNames <- names(metadata_all_summary[ , c(2:29)])
 for(i in colNames){
   plt <- ggplot(data=metadata_all_summary, aes_string(x=i)) +
@@ -625,31 +597,25 @@ for(i in colNames){
 
 ```
 ```{r}
-#https://www.r-bloggers.com/2020/05/step-by-step-guide-on-how-to-build-linear-regression-in-r-with-code/
-
 # create linear regression dataset
 # need to exclude 
 lr_data <- subset(metadata_all_summary, select = -c(id,eFTP,actual_ftp_perc,actual_ftp_bin,max_critical_power_1s))
 # check the distribution of the target variable
 library(ggplot2)
-# Building histogram to test each variable to see if it follows a normal distribution
+# building FTP histogram
 ggplot(data=lr_data, aes(lr_data$max_critical_power_60m)) +
   geom_histogram(aes(y =..density..), fill = "orange") +
   geom_density()
 # target variable follows a normal distribution
-
-```
-```{r}
 # descriptive statistics of all variables being used in LR
 install.packages('psych')
 library(psych)
 psych::describe(lr_data)
+data_stats <- psych::describe(lr_data)
 
 ```
 ```{r}
-# checking for outliers
-# need to do more research on how to remove outliers based on a formula and move this up to a section closer to the top, in the data summary
-# Next step is to check for correlation
+# Next step is to check for correlation, this can be reviewed at a later stage once the model is developed to understand what correlation there is between the independent variables
 install.packages("corrplot")
 require(corrplot)
 correlation <- cor(lr_data) 
@@ -657,7 +623,9 @@ correlation <- round(correlation,2)
 # In theory, the correlation between the independent variables should be zero. In practice, we expect and are okay with weak to no correlation between independent variables.
 # however we expect there to be correlation between all power variables
 # split the data
-
+```
+Running Model 1
+```{r}
 install.packages('caret')
 library(caret)
 # Split data into train and test
@@ -668,25 +636,23 @@ test <- lr_data[-index, ]
 dim(train)
 
 # building the model
-# Taining model
+# training model 1
 lmModel <- lm(max_critical_power_60m ~ . , data = train)
 # Printing the model object
 print(lmModel)
-```
-```{r}
 # Checking model statistics
 summary(lmModel)
 # Using AIC function
 AIC(lmModel)
 # Using BIC function
 BIC(lmModel)  
-
 # 1st iteration
 # AIC [1] 19937.58
 # BIC [1] 20088.33
 ```
-running model with significant variables only
+Running Model 2
 ```{r}
+#running model with significant variables only
 lr_data_sig <- subset(lr_data, select = c(avg_weight,
                                           avg_power_all_rides,
                                           avg_coggan_np,
@@ -704,39 +670,59 @@ test_1 <- lr_data_sig[-index, ]
 dim(train_1)
 
 # building the model
-# Training model
+# training model 2
 lmModel_1 <- lm(max_critical_power_60m ~ . , data = train_1)
 # Printing the model object
 print(lmModel_1)
 # Checking model statistics
 summary(lmModel_1)
-```
-
-
-testing fit of the model
-```{r}
 # Using AIC function
 AIC(lmModel_1)
 # Using BIC function
 BIC(lmModel_1)  
-
-# 2nd iteration
-# AIC [1] 19892.34
-# BIC [1] 19950.32
 ```
+Running Model 3
+```{r}
+lr_data_sig_2 <- subset(lr_data, select = c(avg_weight,
+                                           avg_power_all_rides,
+                                           max_critical_power_30m,
+                                           perc_zone1,
+                                           perc_zone3,
+                                           max_critical_power_60m))
+# Split data into train and test
+index <- createDataPartition(lr_data_sig_2$max_critical_power_60m, p = .70, list = FALSE)
+train_2 <- lr_data_sig_2[index, ]
+test_2 <- lr_data_sig_2[-index, ]
+# Checking the dim of train
+dim(train_2)
+
+# building the model
+# training model 3
+lmModel_2 <- lm(max_critical_power_60m ~ . , data = train_2)
+# Printing the model object
+print(lmModel_2)
+# Checking model statistics
+summary(lmModel_2)
+
+# Using AIC function
+AIC(lmModel_2)
+# Using BIC function
+BIC(lmModel_2)  
+
+# 3rd iteration
+# AIC [1] 20209.61
+# BIC [1] 20250.19
+```
+Residual diagnostics of Model 2
 ```{r}
 names(lmModel_1)
-#The above vector presents the names of the object that constitute the model object. Here, fitted values are the predicted values. Now, we will use these values to generate the rmse values.(reword straight from the text)
-```
-```{r}
+
 install.packages("Metrics")
 library(Metrics)
 rmse(actual = train_1$max_critical_power_60m, predicted = lmModel_1$fitted.values)
-```
-```{r}
-# Nwanganga
+
 # residual diagnostics
-# 1. determin mean of zero
+# 1. determine mean of zero
 mean(lmModel_1$residuals)
 # 1.209694e-15 is extremely close to zero therefore satisfying this condition
 
@@ -745,26 +731,108 @@ install.packages("olsrr")
 library(olsrr)
 ols_plot_resid_hist(lmModel_1)
 ols_plot_resid_fit(lmModel_1)
-```
 
-
-```{r}
-# confirm assumptions of a linear regression
-#1. Errors should follow normal distribution – This can be checked by drawing a histogram of residuals or by using plot() function. The plot function creates 4 different charts. One of which is an NPP plot. The chart confirms if the errors follow a normal distribution or not.
+#perform Breusch-Pagan Test
+library(lmtest)
+bptest(lmModel_1)
 
 # Histogram to check the distribution of errors
 hist(lmModel_1$residuals, 
      color = "grey",
      breaks = 50)
+
 ```
+There seems to be Heteroscedasticity present, to solve for this we will weight certain variable
+Running Model 4 to weight variables and try fix heteroscedasticity
 ```{r}
-# We except the points to be very close to the dotted line in an NPP plot. Points being close to the line means that errors follow a normal distribution.
-plot(lmModel_1)
+#define weights to use
+wt <- 1 / lm(abs(lmModel_1$residuals) ~ lmModel_1$fitted.values)$fitted.values^2
+
+#perform weighted least squares regression
+wls_model <- lm(max_critical_power_60m ~ . , data = train_1, weights=wt)
+
+
+#view summary of model
+summary(wls_model)
+
+# Using AIC function
+AIC(lmModel_2)
+# Using BIC function
+BIC(lmModel_2) 
+
+ols_plot_resid_hist(wls_model)
+ols_plot_resid_fit(wls_model)
+bptest(wls_model)
+hist(wls_model$residuals, 
+     color = "grey",
+     breaks = 50)
+
+```
+Running Model 5 to weight variables and try fix heteroscedasticity with only significant variables from Model 4
+```{r}
+lr_data_sig_3 <- subset(lr_data, select = c(avg_power_all_rides,
+                                            max_critical_power_5s,
+                                           max_critical_power_30m,
+                                           perc_zone3,
+                                           max_critical_power_60m))
+# Split data into train and test
+index <- createDataPartition(lr_data_sig_3$max_critical_power_60m, p = .70, list = FALSE)
+train_3 <- lr_data_sig_3[index, ]
+test_3 <- lr_data_sig_3[-index, ]
+# Checking the dim of train
+dim(train_3)
+
+# building the model
+# training model 3
+lmModel_3 <- lm(max_critical_power_60m ~ . , data = train_3)
+# Printing the model object
+print(lmModel_3)
+# Checking model statistics
+summary(lmModel_3)
+
+# Using AIC function
+AIC(lmModel_3)
+# Using BIC function
+BIC(lmModel_3)  
+
+ols_plot_resid_hist(lmModel_3)
+ols_plot_resid_fit(lmModel_3)
+bptest(lmModel_3)
+
+
+#define weights to use
+wt_2 <- 1 / lm(abs(lmModel_3$residuals) ~ lmModel_3$fitted.values)$fitted.values^2
+
+#perform weighted least squares regression
+wls_model_2 <- lm(max_critical_power_60m ~ . , data = train_3, weights=wt_2)
+
+
+# Printing the model object
+print(wls_model_2)
+#view summary of model
+summary(wls_model_2)
+
+# Using AIC function
+AIC(wls_model_2)
+# Using BIC function
+BIC(wls_model_2) 
+
+ols_plot_resid_hist(wls_model_2)
+ols_plot_resid_fit(wls_model_2)
+bptest(wls_model_2)
+hist(wls_model_2$residuals, 
+     color = "grey",
+     breaks = 50)
+```
+
+```{r}
+# we except the points to be very close to the dotted line in an NPP plot. Points being close to the line means that errors follow a normal distribution.
+plot(wls_model_2)
 # see 2nd diagram for NPP plot if the dots follow the line then its show normal distribution
 
-# 2. There should be no heteroscedasticity – This means that the variance of error terms should be constant. We shall not see any patterns when we draw a plot between residuals and fitted values. A straight red line closer to the zero value represents that we do not have heteroscedasticity problem in our data. #see first diagram heteroscedasticity
+# there should be no heteroscedasticity – This means that the variance of error terms should be constant. We shall not see any patterns when we draw a plot between residuals and fitted values. A straight red line closer to the zero value represents that we do not have heteroscedasticity problem in our data. #see first diagram heteroscedasticity
 ```
-3. There should be no multicollinearity – The linear model assumes that the predictor variables do not correlate with each other. If they exhibit high correlation, it is a problem and is called multicollinearity. A variation inflation factor test can help check for the multicollinearity assumption.
+There should be no multicollinearity – The linear model assumes that the predictor variables do not correlate with each other. If they exhibit high correlation, it is a problem and is called multicollinearity. A variation inflation factor test can help check for the multicollinearity assumption.
 
 VIF = 1/(1-R2)
 
@@ -782,7 +850,7 @@ VIF is an iterative process. The function will remove one variable at a time, wh
 # VIF is an iterative process. The function will remove one variable at a time, which is cause for multicollinearity and repeats the process until all problem causing variables are removed. So, finally, we are left with the list of variables that have no or very weak correlation between them.
 
 # https://gist.github.com/fawda123/4717702
-install.packages("fmsb")
+# install.packages("fmsb")
 
 vif_func<-function(in_frame,thresh=10,trace=T,...){
 
@@ -850,19 +918,19 @@ vif_func<-function(in_frame,thresh=10,trace=T,...){
 }
 # create dataset for vif test
 # need to exclude 
-lr_data_vif <- subset(lr_data_sig, select = -c(max_critical_power_60m))
-vif_func(lr_data_sig[,1:8])
+lr_data_vif <- subset(lr_data_sig_3, select = -c(max_critical_power_60m))
+vif_func(lr_data_sig_3[,1:4])
 
-# based on VIF results it makes sense to remove either avg_power_all_rides or avg_coggan_np
-
-# https://blog.minitab.com/en/understanding-statistics/handling-multicollinearity-in-regression-analysis#:~:text=A%20VIF%20between%205%20and,poorly%20estimated%20due%20to%20multicollinearity.
+# easier method to compute VIF
+ols_vif_tol(wls_model_2)
 ```
 3. There should be no auto serial correlation – The autocorrelation means that error terms should not be correlated with each other. To check this, we can run the Durbin-Watson test(dw test). The test returns a value between 0 and 4. If the value is two, we say there is no auto serial correlation. However, a value higher than 2 represents (-) ve correlation and value lower than 2 represents (+) ve correlation.
 
 ```{r}
-install.packages("lmtest")
+#install.packages("lmtest")
 library("lmtest")
-dwtest(lmModel_1)
+dwtest(wls_model_2)
+ols_vif_tol(wls_model_2)
 #	Durbin-Watson test
 
 # data:  lmModel_1
