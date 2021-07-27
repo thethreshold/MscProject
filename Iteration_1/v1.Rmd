@@ -756,9 +756,9 @@ wls_model <- lm(max_critical_power_60m ~ . , data = train_1, weights=wt)
 summary(wls_model)
 
 # Using AIC function
-AIC(lmModel_2)
+AIC(wls_model)
 # Using BIC function
-BIC(lmModel_2) 
+BIC(wls_model) 
 
 ols_plot_resid_hist(wls_model)
 ols_plot_resid_fit(wls_model)
@@ -774,6 +774,7 @@ lr_data_sig_3 <- subset(lr_data, select = c(avg_power_all_rides,
                                             max_critical_power_5s,
                                            max_critical_power_30m,
                                            perc_zone3,
+                                           max_critical_power_20m,
                                            max_critical_power_60m))
 # Split data into train and test
 index <- createDataPartition(lr_data_sig_3$max_critical_power_60m, p = .70, list = FALSE)
@@ -784,7 +785,12 @@ dim(train_3)
 
 # building the model
 # training model 3
-lmModel_3 <- lm(max_critical_power_60m ~ . , data = train_3)
+lmModel_3 <- lm(max_critical_power_60m ~ avg_power_all_rides + 
+                                         max_critical_power_5s +
+                                         max_critical_power_30m +
+                                         perc_zone3, 
+               data = train_3)
+
 # Printing the model object
 print(lmModel_3)
 # Checking model statistics
@@ -804,7 +810,11 @@ bptest(lmModel_3)
 wt_2 <- 1 / lm(abs(lmModel_3$residuals) ~ lmModel_3$fitted.values)$fitted.values^2
 
 #perform weighted least squares regression
-wls_model_2 <- lm(max_critical_power_60m ~ . , data = train_3, weights=wt_2)
+wls_model_2 <- lm(max_critical_power_60m ~ avg_power_all_rides + 
+                                           max_critical_power_5s +
+                                           max_critical_power_30m +
+                                           perc_zone3,
+                 data = train_3, weights=wt_2)
 
 
 # Printing the model object
@@ -829,8 +839,6 @@ hist(wls_model_2$residuals,
 # we except the points to be very close to the dotted line in an NPP plot. Points being close to the line means that errors follow a normal distribution.
 plot(wls_model_2)
 # see 2nd diagram for NPP plot if the dots follow the line then its show normal distribution
-
-# there should be no heteroscedasticity – This means that the variance of error terms should be constant. We shall not see any patterns when we draw a plot between residuals and fitted values. A straight red line closer to the zero value represents that we do not have heteroscedasticity problem in our data. #see first diagram heteroscedasticity
 ```
 There should be no multicollinearity – The linear model assumes that the predictor variables do not correlate with each other. If they exhibit high correlation, it is a problem and is called multicollinearity. A variation inflation factor test can help check for the multicollinearity assumption.
 
@@ -840,132 +848,144 @@ The R implementation of the below function can be found here.
 
 VIF is an iterative process. The function will remove one variable at a time, which is cause for multicollinearity and repeats the process until all problem causing variables are removed. So, finally, we are left with the list of variables that have no or very weak correlation between them.
 
-```{r}
-# 3. There should be no multicollinearity – The linear model assumes that the predictor variables do not correlate with each other. If they exhibit high correlation, it is a problem and is called multicollinearity. A variation inflation factor test can help check for the multicollinearity assumption.
 
-# VIF = 1/(1-R2)
-
-# The R implementation of the below function can be found here.
-
-# VIF is an iterative process. The function will remove one variable at a time, which is cause for multicollinearity and repeats the process until all problem causing variables are removed. So, finally, we are left with the list of variables that have no or very weak correlation between them.
-
-# https://gist.github.com/fawda123/4717702
-# install.packages("fmsb")
-
-vif_func<-function(in_frame,thresh=10,trace=T,...){
-
-  library(fmsb)
-  
-  if(any(!'data.frame' %in% class(in_frame))) in_frame<-data.frame(in_frame)
-  
-  #get initial vif value for all comparisons of variables
-  vif_init<-NULL
-  var_names <- names(in_frame)
-  for(val in var_names){
-      regressors <- var_names[-which(var_names == val)]
-      form <- paste(regressors, collapse = '+')
-      form_in <- formula(paste(val, '~', form))
-      vif_init<-rbind(vif_init, c(val, VIF(lm(form_in, data = in_frame, ...))))
-      }
-  vif_max<-max(as.numeric(vif_init[,2]), na.rm = TRUE)
-
-  if(vif_max < thresh){
-    if(trace==T){ #print output of each iteration
-        prmatrix(vif_init,collab=c('var','vif'),rowlab=rep('',nrow(vif_init)),quote=F)
-        cat('\n')
-        cat(paste('All variables have VIF < ', thresh,', max VIF ',round(vif_max,2), sep=''),'\n\n')
-        }
-    return(var_names)
-    }
-  else{
-
-    in_dat<-in_frame
-
-    #backwards selection of explanatory variables, stops when all VIF values are below 'thresh'
-    while(vif_max >= thresh){
-      
-      vif_vals<-NULL
-      var_names <- names(in_dat)
-        
-      for(val in var_names){
-        regressors <- var_names[-which(var_names == val)]
-        form <- paste(regressors, collapse = '+')
-        form_in <- formula(paste(val, '~', form))
-        vif_add<-VIF(lm(form_in, data = in_dat, ...))
-        vif_vals<-rbind(vif_vals,c(val,vif_add))
-        }
-      max_row<-which(vif_vals[,2] == max(as.numeric(vif_vals[,2]), na.rm = TRUE))[1]
-
-      vif_max<-as.numeric(vif_vals[max_row,2])
-
-      if(vif_max<thresh) break
-      
-      if(trace==T){ #print output of each iteration
-        prmatrix(vif_vals,collab=c('var','vif'),rowlab=rep('',nrow(vif_vals)),quote=F)
-        cat('\n')
-        cat('removed: ',vif_vals[max_row,1],vif_max,'\n\n')
-        flush.console()
-        }
-
-      in_dat<-in_dat[,!names(in_dat) %in% vif_vals[max_row,1]]
-
-      }
-
-    return(names(in_dat))
-    
-    }
-  
-}
-# create dataset for vif test
-# need to exclude 
-lr_data_vif <- subset(lr_data_sig_3, select = -c(max_critical_power_60m))
-vif_func(lr_data_sig_3[,1:4])
-
-# easier method to compute VIF
-ols_vif_tol(wls_model_2)
-```
-3. There should be no auto serial correlation – The autocorrelation means that error terms should not be correlated with each other. To check this, we can run the Durbin-Watson test(dw test). The test returns a value between 0 and 4. If the value is two, we say there is no auto serial correlation. However, a value higher than 2 represents (-) ve correlation and value lower than 2 represents (+) ve correlation.
+There should be no auto serial correlation – The autocorrelation means that error terms should not be correlated with each other. To check this, we can run the Durbin-Watson test(dw test). The test returns a value between 0 and 4. If the value is two, we say there is no auto serial correlation. However, a value higher than 2 represents (-) ve correlation and value lower than 2 represents (+) ve correlation.
 
 ```{r}
 #install.packages("lmtest")
 library("lmtest")
-dwtest(wls_model_2)
+#dwtest(wls_model_2)
 ols_vif_tol(wls_model_2)
 #	Durbin-Watson test
 
-# data:  lmModel_1
-# DW = 1.9113, p-value = 0.01419
 # alternative hypothesis: true autocorrelation is greater than 0
 # Durbin-Watson’s d tests the null hypothesis that the residuals are not linearly auto-correlated.  While d can assume values between 0 and 4, values around 2 indicate no autocorrelation.  As a rule of thumb values of 1.5 < d < 2.5 show that there is no auto-correlation in the data.
 ```
 Now its time to test the test set to validate the accuracy.
 
-Predicting Dependent Variable(Y) in Test Dataset
+Predicting Dependent Variable(Y) in Test dataset
 We test the model performance on test data set to ensure that our model is stable, and we get the same or closer enough results to use this trained model to predict and forecast future values of dependent variables. To predict, we use predict function, and then we generate R-Squared value to see if we get the same result as we got in the training dataset or not.
 
 ```{r}
-# Predicting Price in test dataset
-test_1$predicted_max_critical_power_60m <- predict(lmModel_1, test_1)
+# Predicting pFTP in test dataset
+test_3$predicted_max_critical_power_60m <- predict(wls_model_2, test_3)
 # Priting top 6 rows of actual and predited price
 head(test_1[ , c("max_critical_power_60m", "predicted_max_critical_power_60m")])
 
 # Generating r^2 of test dataset
 # Predicting 60min max in test dataset
-test_1$predicted_max_critical_power_60m <- predict(lmModel_1, test_1)
-actual <- test_1$max_critical_power_60m
-preds <- test_1$predicted_max_critical_power_60m
+test_3$predicted_max_critical_power_60m <- predict(wls_model_2, test_3)
+actual <- test_3$max_critical_power_60m
+preds <- test_3$predicted_max_critical_power_60m
 rss <- sum((preds - actual) ^ 2)
 tss <- sum((actual - mean(actual)) ^ 2)
 rsq <- 1 - rss/tss
 rsq
 ```
-The final step would be to add the eFTP value to the test_1 data to compare the FTP, predicted FTP and eFTP
+The final step would be to add the eFTP value to the test_3 data to compare the FTP, predicted FTP and eFTP
 ```{r}
-final_test <- cbind(test_1, test$max_critical_power_20m, test$max_critical_power_20m*0.95)
+final_test <- cbind(test_3,test_3$max_critical_power_20m*0.95)
 library(dplyr)
-final_test <- rename(final_test, max_critical_power_20m = V2)
-final_test <- rename(final_test, eFTP = V3)
-str(final_test$V2)
+final_test <- rename(final_test, eFTP = V2)
+str(final_test)
+```
+graph the actual vs predicted values in R
+1st aFTP vs pFTP
+2nd aFTP vs eFTP
+
+https://statisticsglobe.com/plot-predicted-vs-actual-values-in-r
+```{r}
+library("ggplot2")
+
+#actual vs predicted
+ggplot(final_test, # Draw plot using ggplot2 package
+       aes(x = predicted_max_critical_power_60m,
+           y = max_critical_power_60m)) +
+  geom_point() +
+  geom_abline(intercept = 0,
+              slope = 1,
+              color = "red",
+              size = 2)+
+       xlim(0,500)+
+       ylim(0,500)
+
+#actual vs eFTP
+ggplot(final_test, # Draw plot using ggplot2 package
+       aes(x = eFTP,
+           y = max_critical_power_60m)) +
+  geom_point() +
+  geom_abline(intercept = 0,
+              slope = 1,
+              color = "red",
+              size = 2)+
+       xlim(0,500)+
+       ylim(0,500)
+
+
+#write.csv(final_test,"\\Users\\Andrew\\Dropbox\\Studies\\MSC Big Data Analytics\\Dissertation\\IT Artefact\\final_test_2.csv", row.names = TRUE)
+
+#write.csv(metadata_all_summary,"\\Users\\Andrew\\Dropbox\\Studies\\MSC Big Data Analytics\\Dissertation\\IT Artefact\\metadata_all_summary.csv", row.names = TRUE)
+
+#write.csv(lr_data,"\\Users\\Andrew\\Dropbox\\Studies\\MSC Big Data Analytics\\Dissertation\\IT Artefact\\lr_data.csv", row.names = TRUE)
+
+#write.csv(test,"\\Users\\Andrew\\Dropbox\\Studies\\MSC Big Data Analytics\\Dissertation\\IT Artefact\\test.csv", row.names = TRUE)
+```
+Calculate descriptive stats
+```{r}
+library(psych)
+
+desc_stat_aFTP <- describe(final_test$max_critical_power_60m) 
+write.csv(desc_stat_aFTP,"\\Users\\Andrew\\Dropbox\\Studies\\MSC Big Data Analytics\\Dissertation\\IT Artefact\\desc_stat_aFTP.csv", row.names = TRUE)
+
+desc_stat_pFTP <- describe(final_test$predicted_max_critical_power_60m) 
+write.csv(desc_stat_pFTP,"\\Users\\Andrew\\Dropbox\\Studies\\MSC Big Data Analytics\\Dissertation\\IT Artefact\\desc_stat_pFTP.csv", row.names = TRUE)
+
+desc_stat_20m <- describe(final_test$max_critical_power_20m) 
+write.csv(desc_stat_20m,"\\Users\\Andrew\\Dropbox\\Studies\\MSC Big Data Analytics\\Dissertation\\IT Artefact\\desc_stat_20m.csv", row.names = TRUE)
+
+desc_stat_eFTP <- describe(final_test$eFTP) 
+write.csv(desc_stat_eFTP,"\\Users\\Andrew\\Dropbox\\Studies\\MSC Big Data Analytics\\Dissertation\\IT Artefact\\desc_stat_eFTP.csv", row.names = TRUE)
+```
+
+calc MSE (Mean Squared Error)
+calc MAE (Mean Absolute Error)
+```{r}
+#two was to calc MSE & MAE, the second way was used
+#first way
+#fit regression model
+lr_mse_pftp <- lm(max_critical_power_60m~predicted_max_critical_power_60m, data=final_test)
+lr_mse_eftp <- lm(max_critical_power_60m~eFTP, data=final_test)
+
+#get model summary
+lr_mse_pftp_summ <-summary(lr_mse_pftp)
+lr_mse_eftp_summ <-summary(lr_mse_eftp)
+
+summary(lr_mse_pftp)
+summary(lr_mse_eftp)
+
+#calculate MSE
+print("MSE - aFTP vs pFTP")
+mean(lr_mse_pftp_summ$residuals^2)
+print("MSE - aFTP vs eFTP")
+mean(lr_mse_eftp_summ$residuals^2)
+
+#second way
+print("MSE - aFTP vs pFTP")
+mean((final_test$max_critical_power_60m - final_test$predicted_max_critical_power_60m)^2)
+print("MSE - aFTP vs eFTP")
+mean((final_test$max_critical_power_60m - final_test$eFTP)^2)
+
+print("MAE - aFTP vs pFTP")
+mean(abs(final_test$max_critical_power_60m - final_test$predicted_max_critical_power_60m))
+print("MAE - aFTP vs eFTP")
+mean(abs(final_test$max_critical_power_60m - final_test$eFTP))
+
+#final_test_2 <- cbind(final_test,
+#                     (final_test$max_critical_power_60m - final_test$predicted_max_critical_power_60m)^2,
+#                     (final_test$max_critical_power_60m - final_test$eFTP)^2,
+#                     abs(final_test$max_critical_power_60m - final_test$predicted_max_critical_power_60m),
+#                     abs(final_test$max_critical_power_60m - final_test$eFTP))
+
 ```
 
 
