@@ -19,9 +19,9 @@ Athlete_metadata <- get_bucket_df(bucket = "goldencheetah-opendata", prefix = "m
 
 Athlete_metadata <- strsplit(Athlete_metadata, "\r\n")
 Athlete_metadata = unlist(Athlete_metadata)
-#str(Athlete_metadata)
-#length(Athlete_metadata)
-#Athlete_metadata[2:6607]
+# str(Athlete_metadata)
+# length(Athlete_metadata)
+# Athlete_metadata[2:6607]
 atm <- length(Athlete_metadata)
 str_subset(Athlete_metadata[2:atm], "\\.zip$") %>%
   walk(function(key) {
@@ -41,6 +41,7 @@ print(t2-t1)
 ```
 Parse all the files into a BigQuery table
 ```{r}
+# parse all the files into a BigQuery table
 require(jsonlite)
 require(data.table)
 require(foreach)
@@ -87,7 +88,7 @@ print(t3 - t2)
 
 # merge into a data.table
 dt_merged <- rbindlist(dt_merged, fill = TRUE)
-#head(dt_merged)
+# head(dt_merged)
 
 # reorder columns such that "id", "date", "sport", "yob" and "gender" are the first columns
 idx_metadata_cols <- which(colnames(dt_merged) %in% c("date","id","sport","yob","gender"))
@@ -269,6 +270,8 @@ print(t3-t4)
 Imported exported BigQuery data into R
 Convert to datatable and summarise all fields
 ```{r}
+# imported exported BigQuery data into R
+# convert to datatable and summarise all fields
 # clean data from power meter errors and unrealistic numbers
 library(bigrquery)
 projectid <- "xxx"
@@ -297,6 +300,7 @@ metadata_all_clean <- query_exec(query1, projectid, use_legacy_sql = FALSE)
 ```
 Write all_metadata_summary table to BigQuery
 ```{r}
+# write all_metadata_summary table to BigQuery
 library(bigrquery)
 projectid <- "xxx"
 query <-
@@ -366,11 +370,13 @@ metadata_all_summary <- query_exec(query, projectid, use_legacy_sql = FALSE)
 ```
 Now that the data is in a smaller dataframe, it requires further summarisation and feature generation. This can be run on local machine. For the scope of this project I exported the file from the Google AI Notebook and imported it into my local machine.
 ```{r}
+# now that the data is in a smaller dataframe, it requires further summarisation and feature generation. This can be run on local machine. For the scope of this project I exported the file from the Google AI Notebook and imported it into my local machine.
 setwd('/Users/Andrew/Dropbox/Studies/MSC Big Data Analytics/Dissertation/IT Artefact')
 metadata_all_summary <- read.csv(file = 'metadata_all_summary_2.csv',sep = ",")
 # some of the summarised data lines have null values, these cant be used in the model and therefore need to be removed
 metadata_all_summary[complete.cases(metadata_all_summary),] # omit lines with missing data
 metadata_all_summary <- na.omit(metadata_all_summary) # remove NA
+
 # there seem to be some errors with birth dates being greater then the current year, therefore only athletes over the age of 16 will be included. This data is up to date to 2020, therefore birth dates > than 2020-16 will be omitted, people older than 100 will be omitted. 
 # male will be converted to 1 and female = 0
 # drop athletes that have less than 30 rides where dropped, as this would roughly give one month of data per athlete that is included
@@ -471,6 +477,7 @@ qplot(metadata_all_summary$eFTP,
 ```
 Some more checking and data cleaning
 ```{r}
+# some more checking and data cleaning
 qplot(metadata_all_summary$eFTP,
       geom="histogram",
       binwidth = 50,  
@@ -497,6 +504,7 @@ str(metadata_all_summary[ , c(2:29)])
 ```
 Creating a histogram of % of FTP witnessed versus best 20min max effort
 ```{r}
+# creating a histogram of % of FTP witnessed versus best 20min max effort
 metadata_summary_test <-
   sqldf("select 
                 *,
@@ -519,6 +527,8 @@ qplot(metadata_summary_test$actual_ftp_perc,
 Creating classification buckets (this was not used)
 Looking for outliers with the use of histograms
 ```{r}
+# creating classification buckets (this was not used)
+# looking for outliers with the use of histograms
 # this was never used to as a model as a classification model was not used, but rather a linear regression. The buckets where created to allow for a classification model if a classification model was to be used.
 # buckets need to be created from this bucket to make it easier for a model to classify
 # 1st iteration create buckets of 2%
@@ -584,9 +594,9 @@ for(i in colNames){
   print(plt)
   Sys.sleep(2)
 }
-#install.packages('tidyverse')
-#library(tidyverse)
-#ggplot(data = as_tibble(group_tags),
+# install.packages('tidyverse')
+# library(tidyverse)
+# ggplot(data = as_tibble(group_tags),
 #       mapping = aes(x=value)) + 
 #       geom_bar(fill="bisque",color="white",alpha=0.7) + 
 #       stat_count(geom="text", aes(label=sprintf("%.4f",..count../length(group_tags))), vjust=-0.5) +
@@ -615,36 +625,37 @@ data_stats <- psych::describe(lr_data)
 
 ```
 ```{r}
-# Next step is to check for correlation, this can be reviewed at a later stage once the model is developed to understand what correlation there is between the independent variables
+# next step is to check for correlation, this can be reviewed at a later stage once the model is developed to understand what correlation there is between the independent variables
 install.packages("corrplot")
 require(corrplot)
 correlation <- cor(lr_data) 
 correlation <- round(correlation,2)
-# In theory, the correlation between the independent variables should be zero. In practice, we expect and are okay with weak to no correlation between independent variables.
+# in theory, the correlation between the independent variables should be zero. In practice, we expect and are okay with weak to no correlation between independent variables.
 # however we expect there to be correlation between all power variables
 # split the data
 ```
 Running Model 1
 ```{r}
+# running Model 1
 install.packages('caret')
 library(caret)
-# Split data into train and test
+# split data into train and test
 index <- createDataPartition(lr_data$max_critical_power_60m, p = .70, list = FALSE)
 train <- lr_data[index, ]
 test <- lr_data[-index, ]
-# Checking the dim of train
+# checking the dim of train
 dim(train)
 
 # building the model
 # training model 1
 lmModel <- lm(max_critical_power_60m ~ . , data = train)
-# Printing the model object
+# printing the model object
 print(lmModel)
-# Checking model statistics
+# checking model statistics
 summary(lmModel)
-# Using AIC function
+# using AIC function
 AIC(lmModel)
-# Using BIC function
+# using BIC function
 BIC(lmModel)  
 # 1st iteration
 # AIC [1] 19937.58
@@ -652,7 +663,8 @@ BIC(lmModel)
 ```
 Running Model 2
 ```{r}
-#running model with significant variables only
+# running Model 2
+# running model with significant variables only
 lr_data_sig <- subset(lr_data, select = c(avg_weight,
                                           avg_power_all_rides,
                                           avg_coggan_np,
@@ -662,38 +674,39 @@ lr_data_sig <- subset(lr_data, select = c(avg_weight,
                                           perc_zone1,
                                           perc_zone3,
                                           max_critical_power_60m))
-# Split data into train and test
+# split data into train and test
 index <- createDataPartition(lr_data_sig$max_critical_power_60m, p = .70, list = FALSE)
 train_1 <- lr_data_sig[index, ]
 test_1 <- lr_data_sig[-index, ]
-# Checking the dim of train
+# checking the dim of train
 dim(train_1)
 
 # building the model
 # training model 2
 lmModel_1 <- lm(max_critical_power_60m ~ . , data = train_1)
-# Printing the model object
+# printing the model object
 print(lmModel_1)
-# Checking model statistics
+# checking model statistics
 summary(lmModel_1)
-# Using AIC function
+# using AIC function
 AIC(lmModel_1)
-# Using BIC function
+# ssing BIC function
 BIC(lmModel_1)  
 ```
 Running Model 3
 ```{r}
+# running Model 3
 lr_data_sig_2 <- subset(lr_data, select = c(avg_weight,
                                            avg_power_all_rides,
                                            max_critical_power_30m,
                                            perc_zone1,
                                            perc_zone3,
                                            max_critical_power_60m))
-# Split data into train and test
+# split data into train and test
 index <- createDataPartition(lr_data_sig_2$max_critical_power_60m, p = .70, list = FALSE)
 train_2 <- lr_data_sig_2[index, ]
 test_2 <- lr_data_sig_2[-index, ]
-# Checking the dim of train
+# checking the dim of train
 dim(train_2)
 
 # building the model
@@ -701,12 +714,12 @@ dim(train_2)
 lmModel_2 <- lm(max_critical_power_60m ~ . , data = train_2)
 # Printing the model object
 print(lmModel_2)
-# Checking model statistics
+# checking model statistics
 summary(lmModel_2)
 
-# Using AIC function
+# using AIC function
 AIC(lmModel_2)
-# Using BIC function
+# using BIC function
 BIC(lmModel_2)  
 
 # 3rd iteration
@@ -715,6 +728,7 @@ BIC(lmModel_2)
 ```
 Residual diagnostics of Model 2
 ```{r}
+# residual diagnostics of Model 2
 names(lmModel_1)
 
 install.packages("Metrics")
@@ -726,17 +740,17 @@ rmse(actual = train_1$max_critical_power_60m, predicted = lmModel_1$fitted.value
 mean(lmModel_1$residuals)
 # 1.209694e-15 is extremely close to zero therefore satisfying this condition
 
-# 2. Normality of residuals
+# 2. normality of residuals
 install.packages("olsrr")
 library(olsrr)
 ols_plot_resid_hist(lmModel_1)
 ols_plot_resid_fit(lmModel_1)
 
-#perform Breusch-Pagan Test
+# perform Breusch-Pagan Test
 library(lmtest)
 bptest(lmModel_1)
 
-# Histogram to check the distribution of errors
+# histogram to check the distribution of errors
 hist(lmModel_1$residuals, 
      color = "grey",
      breaks = 50)
@@ -745,17 +759,19 @@ hist(lmModel_1$residuals,
 There seems to be Heteroscedasticity present, to solve for this we will weight certain variable
 Running Model 4 to weight variables and try fix heteroscedasticity
 ```{r}
-#define weights to use
+# there seems to be Heteroscedasticity present, to solve for this we will weight certain variable
+# running Model 4 to weight variables and try fix heteroscedasticity
+# define weights to use
 wt <- 1 / lm(abs(lmModel_1$residuals) ~ lmModel_1$fitted.values)$fitted.values^2
 
-#perform weighted least squares regression
+# perform weighted least squares regression
 wls_model <- lm(max_critical_power_60m ~ . , data = train_1, weights=wt)
 
 
-#view summary of model
+# view summary of model
 summary(wls_model)
 
-# Using AIC function
+# using AIC function
 AIC(wls_model)
 # Using BIC function
 BIC(wls_model) 
@@ -770,17 +786,18 @@ hist(wls_model$residuals,
 ```
 Running Model 5 to weight variables and try fix heteroscedasticity with only significant variables from Model 4
 ```{r}
+# running Model 5 to weight variables and try fix heteroscedasticity with only significant variables from Model 4
 lr_data_sig_3 <- subset(lr_data, select = c(avg_power_all_rides,
                                             max_critical_power_5s,
                                            max_critical_power_30m,
                                            perc_zone3,
                                            max_critical_power_20m,
                                            max_critical_power_60m))
-# Split data into train and test
+# split data into train and test
 index <- createDataPartition(lr_data_sig_3$max_critical_power_60m, p = .70, list = FALSE)
 train_3 <- lr_data_sig_3[index, ]
 test_3 <- lr_data_sig_3[-index, ]
-# Checking the dim of train
+# checking the dim of train
 dim(train_3)
 
 # building the model
@@ -791,14 +808,14 @@ lmModel_3 <- lm(max_critical_power_60m ~ avg_power_all_rides +
                                          perc_zone3, 
                data = train_3)
 
-# Printing the model object
+# printing the model object
 print(lmModel_3)
-# Checking model statistics
+# checking model statistics
 summary(lmModel_3)
 
-# Using AIC function
+# using AIC function
 AIC(lmModel_3)
-# Using BIC function
+# using BIC function
 BIC(lmModel_3)  
 
 ols_plot_resid_hist(lmModel_3)
@@ -806,10 +823,10 @@ ols_plot_resid_fit(lmModel_3)
 bptest(lmModel_3)
 
 
-#define weights to use
+# define weights to use
 wt_2 <- 1 / lm(abs(lmModel_3$residuals) ~ lmModel_3$fitted.values)$fitted.values^2
 
-#perform weighted least squares regression
+# perform weighted least squares regression
 wls_model_2 <- lm(max_critical_power_60m ~ avg_power_all_rides + 
                                            max_critical_power_5s +
                                            max_critical_power_30m +
@@ -817,14 +834,14 @@ wls_model_2 <- lm(max_critical_power_60m ~ avg_power_all_rides +
                  data = train_3, weights=wt_2)
 
 
-# Printing the model object
+# printing the model object
 print(wls_model_2)
-#view summary of model
+# view summary of model
 summary(wls_model_2)
 
-# Using AIC function
+# using AIC function
 AIC(wls_model_2)
-# Using BIC function
+# using BIC function
 BIC(wls_model_2) 
 
 ols_plot_resid_hist(wls_model_2)
@@ -852,14 +869,14 @@ VIF is an iterative process. The function will remove one variable at a time, wh
 There should be no auto serial correlation – The autocorrelation means that error terms should not be correlated with each other. To check this, we can run the Durbin-Watson test(dw test). The test returns a value between 0 and 4. If the value is two, we say there is no auto serial correlation. However, a value higher than 2 represents (-) ve correlation and value lower than 2 represents (+) ve correlation.
 
 ```{r}
-#install.packages("lmtest")
+# install.packages("lmtest")
 library("lmtest")
-#dwtest(wls_model_2)
+# dwtest(wls_model_2)
 ols_vif_tol(wls_model_2)
 #	Durbin-Watson test
 
 # alternative hypothesis: true autocorrelation is greater than 0
-# Durbin-Watson’s d tests the null hypothesis that the residuals are not linearly auto-correlated.  While d can assume values between 0 and 4, values around 2 indicate no autocorrelation.  As a rule of thumb values of 1.5 < d < 2.5 show that there is no auto-correlation in the data.
+# durbin-Watson’s d tests the null hypothesis that the residuals are not linearly auto-correlated.  While d can assume values between 0 and 4, values around 2 indicate no autocorrelation.  As a rule of thumb values of 1.5 < d < 2.5 show that there is no auto-correlation in the data.
 ```
 Now its time to test the test set to validate the accuracy.
 
@@ -867,13 +884,13 @@ Predicting Dependent Variable(Y) in Test dataset
 We test the model performance on test data set to ensure that our model is stable, and we get the same or closer enough results to use this trained model to predict and forecast future values of dependent variables. To predict, we use predict function, and then we generate R-Squared value to see if we get the same result as we got in the training dataset or not.
 
 ```{r}
-# Predicting pFTP in test dataset
+# predicting pFTP in test dataset
 test_3$predicted_max_critical_power_60m <- predict(wls_model_2, test_3)
-# Priting top 6 rows of actual and predited price
+# printing top 6 rows of actual and predicted price
 head(test_1[ , c("max_critical_power_60m", "predicted_max_critical_power_60m")])
 
-# Generating r^2 of test dataset
-# Predicting 60min max in test dataset
+# generating r^2 of test dataset
+# predicting 60min max in test dataset
 test_3$predicted_max_critical_power_60m <- predict(wls_model_2, test_3)
 actual <- test_3$max_critical_power_60m
 preds <- test_3$predicted_max_critical_power_60m
@@ -884,21 +901,25 @@ rsq
 ```
 The final step would be to add the eFTP value to the test_3 data to compare the FTP, predicted FTP and eFTP
 ```{r}
+# The final step would be to add the eFTP value to the test_3 data to compare the FTP, predicted FTP and eFTP
 final_test <- cbind(test_3,test_3$max_critical_power_20m*0.95)
 library(dplyr)
 final_test <- rename(final_test, eFTP = V2)
 str(final_test)
 ```
-graph the actual vs predicted values in R
+Graph the actual vs predicted values in R
 1st aFTP vs pFTP
 2nd aFTP vs eFTP
 
 https://statisticsglobe.com/plot-predicted-vs-actual-values-in-r
 ```{r}
+# graph the actual vs predicted values in R
+# 1st aFTP vs pFTP
+# 2nd aFTP vs eFTP
 library("ggplot2")
 
-#actual vs predicted
-ggplot(final_test, # Draw plot using ggplot2 package
+# actual vs predicted
+ggplot(final_test, # draw plot using ggplot2 package
        aes(x = predicted_max_critical_power_60m,
            y = max_critical_power_60m)) +
   geom_point() +
@@ -909,8 +930,8 @@ ggplot(final_test, # Draw plot using ggplot2 package
        xlim(0,500)+
        ylim(0,500)
 
-#actual vs eFTP
-ggplot(final_test, # Draw plot using ggplot2 package
+# actual vs eFTP
+ggplot(final_test, # draw plot using ggplot2 package
        aes(x = eFTP,
            y = max_critical_power_60m)) +
   geom_point() +
@@ -922,16 +943,17 @@ ggplot(final_test, # Draw plot using ggplot2 package
        ylim(0,500)
 
 
-#write.csv(final_test,"\\Users\\Andrew\\Dropbox\\Studies\\MSC Big Data Analytics\\Dissertation\\IT Artefact\\final_test_2.csv", row.names = TRUE)
+# write.csv(final_test,"\\Users\\Andrew\\Dropbox\\Studies\\MSC Big Data Analytics\\Dissertation\\IT Artefact\\final_test_2.csv", row.names = TRUE)
 
-#write.csv(metadata_all_summary,"\\Users\\Andrew\\Dropbox\\Studies\\MSC Big Data Analytics\\Dissertation\\IT Artefact\\metadata_all_summary.csv", row.names = TRUE)
+# write.csv(metadata_all_summary,"\\Users\\Andrew\\Dropbox\\Studies\\MSC Big Data Analytics\\Dissertation\\IT Artefact\\metadata_all_summary.csv", row.names = TRUE)
 
-#write.csv(lr_data,"\\Users\\Andrew\\Dropbox\\Studies\\MSC Big Data Analytics\\Dissertation\\IT Artefact\\lr_data.csv", row.names = TRUE)
+# write.csv(lr_data,"\\Users\\Andrew\\Dropbox\\Studies\\MSC Big Data Analytics\\Dissertation\\IT Artefact\\lr_data.csv", row.names = TRUE)
 
-#write.csv(test,"\\Users\\Andrew\\Dropbox\\Studies\\MSC Big Data Analytics\\Dissertation\\IT Artefact\\test.csv", row.names = TRUE)
+# write.csv(test,"\\Users\\Andrew\\Dropbox\\Studies\\MSC Big Data Analytics\\Dissertation\\IT Artefact\\test.csv", row.names = TRUE)
 ```
 Calculate descriptive stats
 ```{r}
+# calculate descriptive stats
 library(psych)
 
 desc_stat_aFTP <- describe(final_test$max_critical_power_60m) 
@@ -946,30 +968,31 @@ write.csv(desc_stat_20m,"\\Users\\Andrew\\Dropbox\\Studies\\MSC Big Data Analyti
 desc_stat_eFTP <- describe(final_test$eFTP) 
 write.csv(desc_stat_eFTP,"\\Users\\Andrew\\Dropbox\\Studies\\MSC Big Data Analytics\\Dissertation\\IT Artefact\\desc_stat_eFTP.csv", row.names = TRUE)
 ```
-
 calc MSE (Mean Squared Error)
 calc MAE (Mean Absolute Error)
 ```{r}
-#two was to calc MSE & MAE, the second way was used
-#first way
-#fit regression model
+# calc MSE (Mean Squared Error)
+# calc MAE (Mean Absolute Error)
+# two was to calc MSE & MAE, the second way was used
+# first way
+# fit regression model
 lr_mse_pftp <- lm(max_critical_power_60m~predicted_max_critical_power_60m, data=final_test)
 lr_mse_eftp <- lm(max_critical_power_60m~eFTP, data=final_test)
 
-#get model summary
+# get model summary
 lr_mse_pftp_summ <-summary(lr_mse_pftp)
 lr_mse_eftp_summ <-summary(lr_mse_eftp)
 
 summary(lr_mse_pftp)
 summary(lr_mse_eftp)
 
-#calculate MSE
+# calculate MSE
 print("MSE - aFTP vs pFTP")
 mean(lr_mse_pftp_summ$residuals^2)
 print("MSE - aFTP vs eFTP")
 mean(lr_mse_eftp_summ$residuals^2)
 
-#second way
+# second way
 print("MSE - aFTP vs pFTP")
 mean((final_test$max_critical_power_60m - final_test$predicted_max_critical_power_60m)^2)
 print("MSE - aFTP vs eFTP")
@@ -980,12 +1003,10 @@ mean(abs(final_test$max_critical_power_60m - final_test$predicted_max_critical_p
 print("MAE - aFTP vs eFTP")
 mean(abs(final_test$max_critical_power_60m - final_test$eFTP))
 
-#final_test_2 <- cbind(final_test,
-#                     (final_test$max_critical_power_60m - final_test$predicted_max_critical_power_60m)^2,
-#                     (final_test$max_critical_power_60m - final_test$eFTP)^2,
-#                     abs(final_test$max_critical_power_60m - final_test$predicted_max_critical_power_60m),
-#                     abs(final_test$max_critical_power_60m - final_test$eFTP))
+# final_test_2 <- cbind(final_test,
+#                      (final_test$max_critical_power_60m - final_test$predicted_max_critical_power_60m)^2,
+#                      (final_test$max_critical_power_60m - final_test$eFTP)^2,
+#                      abs(final_test$max_critical_power_60m - final_test$predicted_max_critical_power_60m),
+#                      abs(final_test$max_critical_power_60m - final_test$eFTP))
 
 ```
-
-
